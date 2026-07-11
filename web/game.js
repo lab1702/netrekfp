@@ -55,25 +55,37 @@ function refreshSel() {
   for (const b of teamsP.children) b.classList.toggle("sel", b.dataset.team === selTeam);
   for (const b of shipsP.children) b.classList.toggle("sel", b.dataset.ship === selShip);
 }
-const botsP = document.getElementById("bots");
-function buildBotUI() {
-  if (botsP.childElementCount) return;
+const botPanel = document.getElementById("botPanel");
+function buildBotControls(target, inline) {
+  if (target.childElementCount) return;
   const add = (label, msg, color) => {
     const b = document.createElement("button");
     b.textContent = label;
     if (color) b.style.color = color;
     b.onclick = () => send(msg);
-    botsP.appendChild(b);
+    target.appendChild(b);
   };
-  const lbl = document.createElement("span");
-  lbl.textContent = "bots: ";
-  botsP.appendChild(lbl);
+  if (inline) {
+    const lbl = document.createElement("span");
+    lbl.textContent = "bots: ";
+    target.appendChild(lbl);
+  }
   for (const tm of ["F", "R", "K", "O"])
     add("+" + tm, { t: "addbot", team: tm }, TEAM_CSS[tm]);
+  if (!inline) target.appendChild(document.createElement("br"));
   for (const tm of ["F", "R", "K", "O"])
     add("−" + tm, { t: "removebot", team: tm }, TEAM_CSS[tm]);
+  if (!inline) target.appendChild(document.createElement("br"));
   add("BALANCE", { t: "balancebots" });
   add("CLEAR", { t: "clearbots" });
+}
+function buildBotUI() {
+  buildBotControls(document.getElementById("bots"), true);
+  buildBotControls(document.getElementById("botPanelButtons"), false);
+}
+function toggleBotPanel(show) {
+  const on = show !== undefined ? show : botPanel.style.display !== "block";
+  botPanel.style.display = on ? "block" : "none";
 }
 
 document.getElementById("go").onclick = tryJoin;
@@ -203,7 +215,11 @@ addEventListener("keydown", e => {
     case "c": send({ t: "cloak" }); break;
     case "d": send({ t: "det" }); break;
     case "m": mapOn = !mapOn; mapCanvas.style.display = mapOn ? "block" : "none"; break;
-    case "Escape": send({ t: "quit" }); break;
+    case "\\": toggleBotPanel(); break;
+    case "Escape":
+      if (botPanel.style.display === "block") { toggleBotPanel(false); break; }
+      send({ t: "quit" });
+      break;
   }
 });
 
