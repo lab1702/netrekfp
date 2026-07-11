@@ -64,7 +64,8 @@ team colors and all in-game rendering are historical and deliberately outside th
 |---|---|
 | right-click | set course toward pointer |
 | left-click / `t` | fire torpedo toward pointer |
-| middle-click / `p` | fire phaser toward pointer |
+| middle-click / `f` | fire phaser toward pointer |
+| `p` | player list: 4 team columns, sorted by kills |
 | `0`–`9`, `=` | warp speed (= is max) |
 | `s` | shields |
 | `o` | orbit (warp ≤ 2, near planet) |

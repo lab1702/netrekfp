@@ -87,6 +87,40 @@ function buildBotUI() {
   buildBotControls(document.getElementById("bots"), true);
   buildBotControls(document.getElementById("botPanelButtons"), false);
 }
+// ---------- player list: 4 team columns, kills descending ----------
+const playerListDiv = document.getElementById("playerList");
+function togglePlayerList(show) {
+  const on = show !== undefined ? show : playerListDiv.style.display !== "block";
+  playerListDiv.style.display = on ? "block" : "none";
+  if (on) renderPlayerList();
+}
+function renderPlayerList() {
+  if (!curSnap) return;
+  const byTeam = { F: [], R: [], K: [], O: [] };
+  for (const p of curSnap.players) byTeam[p.tm]?.push(p);
+  playerListDiv.textContent = "";
+  const cols = document.createElement("div");
+  cols.className = "cols";
+  for (const [tm, label] of [["F", "Federation"], ["R", "Romulan"],
+                             ["K", "Klingon"], ["O", "Orion"]]) {
+    const col = document.createElement("div");
+    const h = document.createElement("h3");
+    h.textContent = label;
+    h.style.color = TEAM_CSS[tm];
+    col.appendChild(h);
+    for (const p of byTeam[tm].sort((a, b) => (b.ki || 0) - (a.ki || 0) || a.i - b.i)) {
+      const row = document.createElement("div");
+      row.className = "row" + (p.st === "dead" ? " dead" : "");
+      row.style.color = TEAM_CSS[tm];
+      row.textContent = `${String(p.i).padStart(3)}  ${p.nm.padEnd(16).slice(0, 16)} ` +
+                        `${(p.ki || 0).toFixed(2).padStart(6)}`;
+      col.appendChild(row);
+    }
+    cols.appendChild(col);
+  }
+  playerListDiv.appendChild(cols);
+}
+
 function toggleBotPanel(show) {
   const on = show !== undefined ? show : botPanel.style.display !== "block";
   botPanel.style.display = on ? "block" : "none";
@@ -144,6 +178,7 @@ function handle(m) {
       for (const b of m.booms || [])
         booms.push({ ...b, at: snapAt });
       for (const txt of m.msgs || []) logMsg(txt);
+      if (playerListDiv.style.display === "block") renderPlayerList();
       if (m.you.st === "dead" && joined) {
         joined = false;
         joinDiv.style.display = "flex";
@@ -220,7 +255,8 @@ addEventListener("keydown", e => {
     case "=": send({ t: "speed", v: 99 }); break; // server clamps to maxspeed
     case "s": send({ t: "shields" }); break;
     case "t": if (you) send({ t: "torp", d: bearingFromScreen(mouse.x, mouse.y, you) }); break;
-    case "p": if (you) send({ t: "phaser", d: bearingFromScreen(mouse.x, mouse.y, you) }); break;
+    case "f": if (you) send({ t: "phaser", d: bearingFromScreen(mouse.x, mouse.y, you) }); break;
+    case "p": togglePlayerList(); break;
     case "o": send({ t: "orbit" }); break;
     case "b": send({ t: "bomb" }); break;
     case "z": send({ t: "beamup" }); break;

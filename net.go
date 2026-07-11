@@ -69,6 +69,7 @@ type wirePlayer struct {
 	X  int     `json:"x"`
 	Y  int     `json:"y"`
 	D  float64 `json:"d"`
+	Ki float64 `json:"ki"`
 	St string  `json:"st"`
 	Cl bool    `json:"cl"`
 }
@@ -253,11 +254,12 @@ func (s *Server) broadcast() {
 
 	players := make([]wirePlayer, 0, 32)
 	for _, p := range g.players {
-		if p == nil || p.Team == TeamNone || p.Status == "dead" || p.Status == "outfit" {
-			continue
+		if p == nil || p.Team == TeamNone {
+			continue // dead slots stay listed (player roster); quit slots don't
 		}
 		players = append(players, wirePlayer{p.ID, p.Name, teamLetter(p.Team), p.Ship.Type,
-			int(p.X), int(p.Y), round3(p.Dir), p.Status, p.Cloaked})
+			int(p.X), int(p.Y), round3(p.Dir), math.Round(p.Kills*100) / 100,
+			p.Status, p.Cloaked})
 	}
 	torps := make([]wireTorp, 0, len(g.torps))
 	for _, t := range g.torps {
