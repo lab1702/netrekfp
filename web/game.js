@@ -290,24 +290,24 @@ const hudLeft = document.getElementById("hudLeft");
 const hudTop = document.getElementById("hudTop");
 const alertDiv = document.getElementById("alert");
 
-function bar(label, val, max, warnHigh) {
+function bar(label, val, max, warnHigh, color, text) {
   const pct = Math.max(0, Math.min(100, val / max * 100));
   const bad = warnHigh ? pct > 70 : pct < 30;
-  const col = bad ? "var(--danger)" : "var(--green)";
+  const col = color || (bad ? "var(--danger)" : "var(--green)");
   return `${label} <span class="bar"><i style="width:${pct}%;background:${col}"></i></span>` +
-         ` ${Math.round(val)}<br>`;
+         ` ${text !== undefined ? text : Math.round(val)}<br>`;
 }
 
 function updateHUD(you, players) {
   const compass = ((you.d * 180 / Math.PI + 90) % 360 + 360) % 360;
   hudLeft.innerHTML =
+    bar("WARP", you.sp, you.maxsp, false, "var(--amber)", `${you.sp}/${you.maxsp}`) +
     bar("SHLD", you.sh, you.maxsh) +
     bar("HULL", you.maxdm - you.dm, you.maxdm) +
     bar("FUEL", you.fu, you.maxfu) +
     bar("WTMP", you.wt, you.maxwt, true) +
     bar("ETMP", you.et, you.maxet, true) +
-    `WARP ${you.sp}/${you.maxsp} &nbsp; HDG ${compass.toFixed(0)}&deg;<br>` +
-    `TORPS ${you.tp} &nbsp; ARMIES ${you.ar} &nbsp; KILLS ${you.ki.toFixed(2)}` +
+    `HDG ${compass.toFixed(0)}&deg; &nbsp; TORPS ${you.tp} &nbsp; ARMIES ${you.ar} &nbsp; KILLS ${you.ki.toFixed(2)}` +
     (you.shup ? " &nbsp; [SHIELDS]" : "") + (you.cl ? " [CLOAK]" : "") +
     (you.rep ? " [REPAIR]" : "") + (you.bmb ? " [BOMBING]" : "");
 
