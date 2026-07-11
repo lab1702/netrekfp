@@ -197,18 +197,13 @@ addEventListener("mousedown", e => {
   const you = interpYou();
   const d = bearingFromScreen(e.clientX, e.clientY, you);
   if (mapOn) {
-    // right-click: course toward that point; left-click a planet: lock on
+    // right-click: course toward that point; left-click: lock nearest planet
     const g = mapToGalaxy(e.clientX, e.clientY);
     if (!g) return;
     if (e.button === 2) {
       send({ t: "course", d: Math.atan2(g[1] - you.y, g[0] - you.x) });
     } else if (e.button === 0) {
-      let best = -1, bd = 3000; // galaxy units of click slop
-      for (const pl of planets) {
-        const d = Math.hypot(pl.x - g[0], pl.y - g[1]);
-        if (d < bd) { bd = d; best = pl.n; }
-      }
-      if (best >= 0) send({ t: "lock", v: best });
+      send({ t: "lock", v: nearestPlanetTo(g[0], g[1]) });
     }
     return;
   }
@@ -233,8 +228,13 @@ addEventListener("keydown", e => {
     case "R": send({ t: "repair" }); break;
     case "c": send({ t: "cloak" }); break;
     case "d": send({ t: "det" }); break;
-    case "l": { // lock onto the planet under the reticle
+    case "l": { // lock: nearest planet to the pointer (map) or under the reticle (3D)
       if (!curSnap) break;
+      if (mapOn) {
+        const g = mapToGalaxy(mouse.x, mouse.y);
+        if (g) send({ t: "lock", v: nearestPlanetTo(g[0], g[1]) });
+        break;
+      }
       const y2 = interpYou();
       let best = -1, bd = 80; // screen px
       for (const pl of planets) {
@@ -342,6 +342,15 @@ function fmtTime(s) {
 
 // ---------- galactic map ----------
 let mapRect = null;
+function nearestPlanetTo(gx, gy) {
+  let best = 0, bd = Infinity;
+  for (const pl of planets) {
+    const d = Math.hypot(pl.x - gx, pl.y - gy);
+    if (d < bd) { bd = d; best = pl.n; }
+  }
+  return best;
+}
+
 function mapToGalaxy(sx, sy) {
   if (!mapRect) return null;
   const [ox, oy, sz] = mapRect;
