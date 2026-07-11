@@ -316,6 +316,9 @@ function interpList(cur, prev, f) {
   return cur.map(c => {
     const p = prevById[c.i];
     if (!p) return c;
+    // never interpolate across a respawn or teleport: a dead ship parked at
+    // its death site would streak ~35k units to the homeworld in one snap
+    if (p.st !== c.st || Math.hypot(c.x - p.x, c.y - p.y) > 2000) return c;
     return { ...c, x: lerp(p.x, c.x, f), y: lerp(p.y, c.y, f),
              d: c.d !== undefined ? lerpAngle(p.d, c.d, f) : undefined };
   });
