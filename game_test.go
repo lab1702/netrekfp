@@ -298,6 +298,11 @@ func TestSpawnAtHomeworld(t *testing.T) {
 			t.Fatalf("%s spawn (%.0f,%.0f) not within 5000 of %s",
 				tc.team, p.X, p.Y, hw.Name)
 		}
+		want := math.Atan2(GWidth/2-p.Y, GWidth/2-p.X)
+		if p.Dir != want || p.DesDir != want {
+			t.Fatalf("%s spawn should face the exact galaxy center: dir=%f want=%f",
+				tc.team, p.Dir, want)
+		}
 	}
 }
 
