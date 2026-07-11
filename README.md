@@ -5,6 +5,8 @@ instead of a 2D tactical view you look out of your ship at 3D planets and ships 
 space. Planets are huge up close, shrink to a dot as you fly away, and vanish past ~25k units.
 Press `m` for the galactic map.
 
+A radar minimap in the top-right corner shows planets and ships within 20k units, north-up.
+
 Planet names/positions, ship stats, and combat formulas are taken verbatim from the Vanilla
 netrek server source (`quozl/netrek-server`).
 

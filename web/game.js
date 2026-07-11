@@ -412,8 +412,52 @@ function drawMap(you, players) {
                ox + 6, oy + 16);
 }
 
+// ---------- minimap: local radar, north-up like the galactic map ----------
+const MINI_SIZE = 170, MINI_RANGE = 20000;
+function drawMinimap(ctx, you, players) {
+  const S = MINI_SIZE, ox = innerWidth - 12 - S, oy = 10;
+  const cx = ox + S / 2, cy = oy + S / 2;
+  ctx.save();
+  ctx.fillStyle = "rgba(8,9,7,0.55)";
+  ctx.fillRect(ox, oy, S, S);
+  ctx.strokeStyle = "#3f4038"; // --border-1
+  ctx.strokeRect(ox, oy, S, S);
+  ctx.beginPath(); ctx.rect(ox, oy, S, S); ctx.clip();
+  ctx.strokeStyle = "#23241f"; // half-range ring
+  ctx.beginPath(); ctx.arc(cx, cy, S / 4, 0, 7); ctx.stroke();
+  const px = (x, y) => [cx + (x - you.x) / MINI_RANGE * (S / 2),
+                        cy + (y - you.y) / MINI_RANGE * (S / 2)];
+  for (const pl of planets) {
+    if (Math.abs(pl.x - you.x) > MINI_RANGE || Math.abs(pl.y - you.y) > MINI_RANGE) continue;
+    const [x, y] = px(pl.x, pl.y);
+    ctx.fillStyle = TEAM_CSS[pl.o] || TEAM_CSS.I;
+    ctx.beginPath(); ctx.arc(x, y, 4, 0, 7); ctx.fill();
+    if (curSnap.you.lk === pl.n) {
+      ctx.strokeStyle = "#ffb74d";
+      ctx.beginPath(); ctx.arc(x, y, 7, 0, 7); ctx.stroke();
+    }
+  }
+  const wedge = (x, y, d, color, alpha, r) => {
+    ctx.save();
+    ctx.translate(x, y); ctx.rotate(d + Math.PI / 2);
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = color;
+    ctx.beginPath(); ctx.moveTo(0, -r); ctx.lineTo(r * .75, r * .85);
+    ctx.lineTo(-r * .75, r * .85); ctx.closePath(); ctx.fill();
+    ctx.restore();
+  };
+  for (const p of players) {
+    if (p.st !== "alive" || p.i === myId) continue;
+    if (Math.abs(p.x - you.x) > MINI_RANGE || Math.abs(p.y - you.y) > MINI_RANGE) continue;
+    const [x, y] = px(p.x, p.y);
+    wedge(x, y, p.d, TEAM_CSS[p.tm], p.cl ? 0.4 : 1, 4);
+  }
+  wedge(cx, cy, you.d, "#eceff1", 1, 5); // own ship
+  ctx.restore();
+}
+
 // ---------- overlay (labels + reticle) ----------
-function drawOverlay(labels, you) {
+function drawOverlay(labels, you, players) {
   const ctx = fit2d(overlay);
   ctx.font = "12px Consolas, monospace";
   ctx.textAlign = "center";
@@ -437,6 +481,7 @@ function drawOverlay(labels, you) {
     ctx.strokeStyle = "#546e7a";
     ctx.strokeRect(ahead[0] - 4, ahead[1] - 4, 8, 8);
   }
+  drawMinimap(ctx, you, players);
 }
 
 // ---------- main loop ----------
@@ -487,7 +532,7 @@ function frame() {
     fit2d(overlay); // hide 3D labels/reticle under the map
     drawMap(you, players);
   } else {
-    drawOverlay(labels, you);
+    drawOverlay(labels, you, players);
   }
   updateHUD(curSnap.you, curSnap.players);
 }
