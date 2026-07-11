@@ -333,6 +333,8 @@ function updateHUD(you, players) {
            `${pl.a} armies ${fl ? "(" + fl.trim() + ")" : ""}`;
   }
   hudTop.innerHTML = top;
+  // keep the combat log below however many status rows are showing
+  msgsDiv.style.top = hudTop.offsetTop + hudTop.offsetHeight + 8 + "px";
 
   let nearest = 1e9;
   for (const p of players) {
