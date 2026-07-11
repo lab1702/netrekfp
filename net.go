@@ -78,6 +78,7 @@ type wireTorp struct {
 }
 
 type wireYou struct {
+	I     int     `json:"i"`
 	X     float64 `json:"x"`
 	Y     float64 `json:"y"`
 	D     float64 `json:"d"`
@@ -111,15 +112,16 @@ type wireTmode struct {
 }
 
 type wireSnap struct {
-	T       string       `json:"t"`
-	You     wireYou      `json:"you"`
-	Players []wirePlayer `json:"players"`
-	Torps   []wireTorp   `json:"torps"`
-	Phasers []PhaserFx   `json:"phasers"`
-	Planets []wirePlanet `json:"planets"`
-	Tmode   wireTmode    `json:"tmode"`
-	Msgs    []string     `json:"msgs"`
-	Booms   []Boom       `json:"booms"`
+	T       string         `json:"t"`
+	You     wireYou        `json:"you"`
+	Players []wirePlayer   `json:"players"`
+	Torps   []wireTorp     `json:"torps"`
+	Phasers []PhaserFx     `json:"phasers"`
+	Planets []wirePlanet   `json:"planets"`
+	Tmode   wireTmode      `json:"tmode"`
+	Msgs    []string       `json:"msgs"`
+	Booms   []Boom         `json:"booms"`
+	Counts  map[string]int `json:"counts"`
 }
 
 func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
@@ -146,10 +148,12 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 func (c *Client) readPump() {
 	defer func() {
 		c.srv.game.Leave(c)
+		// close(send) must be mutually exclusive with broadcast's sends (both
+		// under s.mu), or a disconnect mid-fanout panics the tick goroutine
 		c.srv.mu.Lock()
 		delete(c.srv.clients, c)
-		c.srv.mu.Unlock()
 		close(c.send)
+		c.srv.mu.Unlock()
 	}()
 	c.conn.SetReadLimit(512)
 	for {
@@ -184,10 +188,9 @@ func (c *Client) readPump() {
 			} else {
 				resp, _ = json.Marshal(map[string]any{"t": "joined", "id": p.ID})
 			}
-			select {
-			case c.send <- resp:
-			default:
-			}
+			// blocking send: this reply is required protocol, not a droppable
+			// snapshot; writePump drains the channel even after a write error
+			c.send <- resp
 			continue
 		}
 		if c.player != nil {
@@ -246,13 +249,15 @@ func (s *Server) broadcast() {
 		T: "snap", Players: players, Torps: torps, Phasers: append([]PhaserFx{}, g.phasers...),
 		Planets: planets, Tmode: wireTmode{g.tmode, g.tmodeLeft / 10},
 		Msgs: append([]string{}, g.msgs...), Booms: append([]Boom{}, g.booms...),
+		Counts: g.teamCounts(),
 	}
+	// consumed: anything Command() appends between broadcasts ships exactly once
+	g.msgs = g.msgs[:0]
+	g.booms = g.booms[:0]
+	g.phasers = g.phasers[:0]
 
-	type outMsg struct {
-		c    *Client
-		data []byte
-	}
-	var outs []outMsg
+	// sends happen under s.mu so a disconnecting client can't close its channel
+	// mid-fanout; the sends are non-blocking so holding the lock is safe
 	s.mu.Lock()
 	for c := range s.clients {
 		p := c.player
@@ -261,7 +266,7 @@ func (s *Server) broadcast() {
 		}
 		mine := snap
 		mine.You = wireYou{
-			X: p.X, Y: p.Y, D: round3(p.Dir), Sp: p.Speed, MaxSp: p.Ship.MaxSpeed,
+			I: p.ID, X: p.X, Y: p.Y, D: round3(p.Dir), Sp: p.Speed, MaxSp: p.Ship.MaxSpeed,
 			Sh: p.Shield, MaxSh: p.Ship.MaxShield, Dm: p.Damage, MaxDm: p.Ship.MaxDamage,
 			Fu: p.Fuel, MaxFu: p.Ship.MaxFuel, Wt: p.WTemp, MaxWt: p.Ship.MaxWpnTemp,
 			Et: p.ETemp, MaxEt: p.Ship.MaxEgnTemp, Tp: p.NTorps, Ar: p.Armies,
@@ -277,19 +282,16 @@ func (s *Server) broadcast() {
 		}
 		mine.Players = vis
 		data, err := json.Marshal(&mine)
-		if err == nil {
-			outs = append(outs, outMsg{c, data})
+		if err != nil {
+			continue
+		}
+		select {
+		case c.send <- data:
+		default: // slow consumer: skip this frame rather than block the loop
 		}
 	}
 	s.mu.Unlock()
 	g.mu.Unlock()
-
-	for _, o := range outs {
-		select {
-		case o.c.send <- o.data:
-		default: // slow consumer: skip this frame rather than block the loop
-		}
-	}
 }
 
 func round3(f float64) float64 { return math.Round(f*1000) / 1000 }

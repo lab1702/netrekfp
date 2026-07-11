@@ -288,7 +288,7 @@ Renderer.prototype.drawShip = function (px, py, yaw, team, dist, dim) {
     this.points.push(px, 0, py, color[0], color[1], color[2], alpha, 3);
   } else {
     this.drawMesh(this.shipBuf, this.shipCount, false,
-                  mat4Model(px, 0, py, -yaw, SHIP_SCALE),
+                  mat4Model(px, 0, py, yaw, SHIP_SCALE),
                   [color[0], color[1], color[2], alpha]);
   }
   return alpha;
@@ -304,8 +304,10 @@ Renderer.prototype.drawTorp = function (px, py, team, dist) {
 
 Renderer.prototype.drawExplosion = function (px, py, age) { // age 0..1
   const r = 100 + age * 900;
+  this.gl.depthMask(false); // translucent shell must not occlude torps/beams
   this.drawMesh(this.sphereBuf, this.sphereCount, true,
                 mat4Model(px, 0, py, 0, r), [1, .6, .15, (1 - age) * .8]);
+  this.gl.depthMask(true);
 };
 
 Renderer.prototype.drawPhaser = function (x1, y1, x2, y2, team, alpha) {

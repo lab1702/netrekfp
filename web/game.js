@@ -106,17 +106,16 @@ function handle(m) {
         joined = false;
         joinDiv.style.display = "flex";
         joinMsg.textContent = "ship destroyed";
-        buildJoinUI(countTeams());
+        buildJoinUI(m.counts);
+      } else if (m.you.st === "alive" && !joined) {
+        // self-heal if the joined reply was lost: the server thinks we fly
+        myId = m.you.i;
+        joined = true;
+        joinDiv.style.display = "none";
       }
       break;
     }
   }
-}
-
-function countTeams() {
-  const c = {};
-  if (curSnap) for (const p of curSnap.players) c[p.tm] = (c[p.tm] || 0) + 1;
-  return c;
 }
 
 // ---------- messages ----------

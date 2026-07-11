@@ -91,9 +91,10 @@ type Player struct {
 	Armies       int
 	Kills        float64
 	NTorps       int
-	PhaserBusy   int   // ticks until phaser ready
+	PhaserBusy   int // ticks until phaser ready
 	ExplodeTicks int
 	LastTorpTick int64
+	WhoDead      int // killer id for explosion chain credit (daemon.c blowup), -1
 
 	client *Client // nil for test players
 }
@@ -160,6 +161,9 @@ func (g *Game) Join(cl *Client, name string, teamL, shipT string) (*Player, stri
 	stats, okShip := shipTypes[shipT]
 	if team < 0 || !okShip {
 		return nil, "bad team or ship"
+	}
+	if cl.player != nil && cl.player.Status != "dead" {
+		return nil, "you are still alive"
 	}
 	counts := 0
 	sbTaken := false
@@ -234,19 +238,35 @@ func (g *Game) spawn(p *Player) {
 	p.Armies = 0
 	p.Kills = 0
 	p.NTorps = 0
+	for _, t := range g.torps { // surviving torps still count against the 8-tube limit
+		if t.Owner == p.ID {
+			p.NTorps++
+		}
+	}
 	p.PhaserBusy = 0
 	p.ExplodeTicks = 0
 	p.LastTorpTick = -1
+	p.WhoDead = -1
 	p.Status = "alive"
 }
 
 func (g *Game) Leave(cl *Client) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	if cl.player != nil {
-		g.players[cl.player.ID] = nil
-		cl.player = nil
+	p := cl.player
+	if p == nil {
+		return
 	}
+	if p.Status == "explode" && p.ExplodeTicks > 7 {
+		g.blowup(p) // don't let disconnecting cancel the pending splash
+	}
+	for id, t := range g.torps { // the slot's next occupant must not inherit these
+		if t.Owner == p.ID {
+			delete(g.torps, id)
+		}
+	}
+	g.players[p.ID] = nil
+	cl.player = nil
 }
 
 // ---------- commands (called with lock held via Command) ----------
@@ -451,6 +471,7 @@ func (g *Game) hurt(v *Player, dmg int, killer int, why string) {
 func (g *Game) kill(v *Player, killer int, why string) {
 	v.Status = "explode"
 	v.ExplodeTicks = 10
+	v.WhoDead = killer
 	v.Speed, v.DesSpeed = 0, 0
 	v.Orbiting = -1
 	v.Bombing, v.RepairMode, v.Cloaked = false, false, false
@@ -473,9 +494,8 @@ func (g *Game) Tick() {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	g.tick++
-	g.msgs = g.msgs[:0]
-	g.booms = g.booms[:0]
-	g.phasers = g.phasers[:0]
+	// transient msgs/booms/phasers are cleared by broadcast() after sending, so
+	// events appended by Command() between ticks aren't lost
 
 	for _, p := range g.players {
 		if p == nil {
@@ -520,15 +540,24 @@ func (g *Game) movePlayer(p *Player) {
 	s := p.Ship
 
 	// desired-speed clamps: damage cripple, engine lockout, fuel starvation (daemon.c:1185-1208)
-	maxSpd := (s.MaxSpeed + 2) - (s.MaxSpeed+1)*p.Damage/s.MaxDamage
+	// crippled max: C truncates the float expression, i.e. ceiling of the subtrahend
+	maxSpd := (s.MaxSpeed + 2) - ((s.MaxSpeed+1)*p.Damage+s.MaxDamage-1)/s.MaxDamage
 	if p.DesSpeed > maxSpd {
 		p.DesSpeed = maxSpd
 	}
 	if p.ELock && p.DesSpeed > 1 {
 		p.DesSpeed = 1
 	}
-	if p.Fuel < s.WarpCost*p.Speed {
-		p.DesSpeed = min(s.Recharge/s.WarpCost+2, s.MaxSpeed-1)
+	starving := p.Fuel < s.WarpCost*p.Speed
+	if starving { // settle at a cruise speed the recharge rate can sustain
+		if s.Recharge/s.WarpCost < p.Speed {
+			p.DesSpeed = s.Recharge/s.WarpCost + 2
+			if p.DesSpeed > s.MaxSpeed {
+				p.DesSpeed = s.MaxSpeed - 1
+			}
+		} else {
+			p.DesSpeed = p.Speed
+		}
 		p.Fuel = 0
 	}
 
@@ -545,8 +574,10 @@ func (g *Game) movePlayer(p *Player) {
 		p.Speed = max(0, min(p.Speed, s.MaxSpeed))
 	}
 
-	p.Fuel -= s.WarpCost * p.Speed
-	p.ETemp += p.Speed
+	if !starving {
+		p.Fuel -= s.WarpCost * p.Speed
+		p.ETemp += p.Speed
+	}
 
 	if p.Orbiting >= 0 {
 		// orbital motion: +2 direction units per update at radius 800 (daemon.c:1132)
@@ -609,16 +640,16 @@ func (g *Game) movePlayer(p *Player) {
 func (g *Game) housekeepPlayer(p *Player) {
 	s := p.Ship
 
-	// shield upkeep (daemon.c:1448)
+	// shield upkeep (daemon.c:1448; GA pays nothing — no SGALAXY case in the C switch)
 	if p.ShieldsUp {
-		cost := 3
 		switch s.Type {
 		case "SC":
-			cost = 2
+			p.Fuel -= 2
+		case "DD", "CA", "BB", "AS":
+			p.Fuel -= 3
 		case "SB":
-			cost = 6
+			p.Fuel -= 6
 		}
-		p.Fuel -= cost
 	}
 
 	// weapon cooling (daemon.c:1520)
@@ -676,25 +707,28 @@ func (g *Game) housekeepPlayer(p *Player) {
 		p.Cloaked = false
 	}
 
-	// repair (daemon.c:1612); 1000 subunits = 1 point
+	// repair (daemon.c:1612); 1000 subunits = 1 point; repair-mode rate replaces
+	// the base rate rather than stacking on it
 	if p.Shield < s.MaxShield {
-		p.SubShield += s.Repair * 2
 		if p.RepairMode && p.Speed == 0 {
 			p.SubShield += s.Repair * 4
 			if orbitingOwn(PlRepair) {
 				p.SubShield += s.Repair * 4
 			}
+		} else {
+			p.SubShield += s.Repair * 2
 		}
 		p.Shield = min(s.MaxShield, p.Shield+p.SubShield/1000)
 		p.SubShield %= 1000
 	}
 	if p.Damage > 0 && !p.ShieldsUp {
-		p.SubDamage += s.Repair
 		if p.RepairMode && p.Speed == 0 {
 			p.SubDamage += s.Repair * 2
 			if orbitingOwn(PlRepair) {
 				p.SubDamage += s.Repair * 2
 			}
+		} else {
+			p.SubDamage += s.Repair
 		}
 		p.Damage = max(0, p.Damage-p.SubDamage/1000)
 		p.SubDamage %= 1000
@@ -713,7 +747,12 @@ func (g *Game) moveTorps() {
 		t.X += float64(t.Speed*Warp1) * math.Cos(t.Dir)
 		t.Y += float64(t.Speed*Warp1) * math.Sin(t.Dir)
 		t.Fuse--
-		if t.X < 0 || t.X > GWidth || t.Y < 0 || t.Y > GWidth || t.Fuse <= 0 {
+		if t.Fuse <= 0 { // expired torps fizzle harmlessly (daemon.c udtorps)
+			g.freeTorp(t)
+			continue
+		}
+		if t.X < 0 || t.X > GWidth || t.Y < 0 || t.Y > GWidth {
+			t.Detter = t.Owner // wall hits are TDET at the owner: team-safe
 			g.explodeTorp(t)
 			continue
 		}
@@ -729,23 +768,23 @@ func (g *Game) moveTorps() {
 	}
 }
 
-func (g *Game) explodeTorp(t *Torp) {
+func (g *Game) freeTorp(t *Torp) {
 	delete(g.torps, t.ID)
 	if o := g.players[t.Owner]; o != nil {
 		o.NTorps--
 	}
+}
+
+func (g *Game) explodeTorp(t *Torp) {
+	g.freeTorp(t)
 	g.booms = append(g.booms, Boom{t.X, t.Y, false})
-	credit := t.Owner
-	if t.Detter >= 0 {
-		credit = t.Detter
-	}
 	for _, p := range g.players {
 		if p == nil || p.Status != "alive" || p.ID == t.Owner {
 			continue
 		}
-		if t.Detter >= 0 && g.players[t.Detter] != nil &&
+		if t.Detter >= 0 && p.ID != t.Detter && g.players[t.Detter] != nil &&
 			p.Team == g.players[t.Detter].Team {
-			continue // TDETTEAMSAFE
+			continue // TDETTEAMSAFE — but the detter himself eats the blast
 		}
 		dist := math.Hypot(p.X-t.X, p.Y-t.Y)
 		if dist > DamDist {
@@ -755,6 +794,10 @@ func (g *Game) explodeTorp(t *Torp) {
 		if dist > ExpDist {
 			dmg = int(float64(t.Damage) * (DamDist - dist) / (DamDist - ExpDist))
 		}
+		credit := t.Owner
+		if t.Detter >= 0 && p.ID != t.Detter {
+			credit = t.Detter // detted torp kills credit the detter...
+		} // ...except when it kills the detter: that one is the owner's
 		g.hurt(p, dmg, credit, "torp")
 	}
 }
@@ -781,7 +824,8 @@ func (g *Game) blowup(v *Player) {
 		if dist > ExpDist {
 			dmg = int(float64(base) * (ShipDamAge - dist) / (ShipDamAge - ExpDist))
 		}
-		g.hurt(p, dmg, -1, "explosion")
+		// chain credit: whoever destroyed the exploding ship gets its splash kills
+		g.hurt(p, dmg, v.WhoDead, "explosion")
 	}
 }
 
@@ -838,11 +882,15 @@ func (g *Game) beam() {
 		}
 		pl := g.planets[p.Orbiting]
 		if p.Beaming == 1 { // up
-			capacity := int(math.Floor(math.Floor(p.Kills*100)/100) * 2)
-			if p.Ship.Type == "AS" {
-				capacity = int(math.Floor(math.Floor(p.Kills*100)/100) * 3)
+			// carry capacity = trunc(kills to 0.01) * 2 (3 for AS); SB has no kills cap
+			capacity := p.Ship.MaxArmies
+			if p.Ship.Type != "SB" {
+				mult := 2.0
+				if p.Ship.Type == "AS" {
+					mult = 3.0
+				}
+				capacity = min(capacity, int(math.Floor(p.Kills*100)/100*mult))
 			}
-			capacity = min(capacity, p.Ship.MaxArmies)
 			if pl.Owner != p.Team || pl.Armies < 5 || p.Armies >= capacity {
 				continue
 			}

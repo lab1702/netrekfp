@@ -80,7 +80,7 @@ var virginal = [40]virginPlanet{
 	{"Polaris", 61400, 77000, TeamOri, 0},
 	{"Arcturus", 55600, 89000, TeamOri, 0},
 	{"Ursae Majoris", 91000, 94000, TeamOri, PlCore},
-	{"Herculis", 70000, 93000, TeamOri, PlCore},
+	{"Herculis", 70000, 93000, TeamOri, 0},
 	{"Antares", 86920, 68920, TeamOri, PlCore},
 }
 

@@ -142,6 +142,73 @@ func TestPlanetCapture(t *testing.T) {
 	}
 }
 
+func TestJoinWhileAliveDenied(t *testing.T) {
+	g := NewGame()
+	c := addPlayer(t, g, "a", "F", "CA")
+	if _, deny := g.Join(c, "a", "F", "SC"); deny == "" {
+		t.Fatal("re-join while alive should be denied")
+	}
+	c.player.Status = "dead"
+	if _, deny := g.Join(c, "a", "F", "SC"); deny != "" {
+		t.Fatalf("re-join after death should work, got: %s", deny)
+	}
+}
+
+func TestBeamCapacityFractionalKills(t *testing.T) {
+	g := NewGame()
+	p := addPlayer(t, g, "a", "F", "CA").player
+	pl := g.planets[0] // Earth, Fed, 30 armies
+	p.X, p.Y = pl.X+OrbDist, pl.Y
+	g.enterOrbit(p)
+	p.Kills = 0.5 // capacity = trunc(0.5*2) = 1, not floor(0.5)*2 = 0
+	p.Beaming = 1
+	g.beam()
+	if p.Armies != 1 {
+		t.Fatalf("kills 0.5 should allow 1 army, got %d", p.Armies)
+	}
+	g.beam()
+	if p.Armies != 1 {
+		t.Fatalf("capacity 1 should stop at 1 army, got %d", p.Armies)
+	}
+}
+
+func TestFuseExpiryHarmless(t *testing.T) {
+	g := NewGame()
+	shooter := addPlayer(t, g, "s", "F", "CA").player
+	victim := addPlayer(t, g, "v", "R", "CA").player
+	shooter.X, shooter.Y = 50000, 50000
+	victim.X, victim.Y = 50000+float64(shooter.Ship.TorpSpeed*Warp1)+1000, 50000
+	g.fireTorp(shooter, 0)
+	for _, tp := range g.torps {
+		tp.Fuse = 1 // expires on next move, ~1000 from the victim (inside DamDist)
+	}
+	g.moveTorps()
+	if len(g.torps) != 0 || shooter.NTorps != 0 {
+		t.Fatal("expired torp should be freed")
+	}
+	if victim.Shield != victim.Ship.MaxShield {
+		t.Fatal("expired torp must fizzle without damage")
+	}
+}
+
+func TestDetterTakesDamageTeamSafe(t *testing.T) {
+	g := NewGame()
+	rom := addPlayer(t, g, "r", "R", "CA").player
+	det := addPlayer(t, g, "d", "F", "CA").player
+	mate := addPlayer(t, g, "m", "F", "CA").player
+	rom.X, rom.Y = 50000, 50000
+	g.fireTorp(rom, 0)
+	det.X, det.Y = 50500+float64(rom.Ship.TorpSpeed*Warp1), 50000
+	mate.X, mate.Y = 50600+float64(rom.Ship.TorpSpeed*Warp1), 50000
+	g.detEnemyTorps(det)
+	if det.Shield == det.Ship.MaxShield {
+		t.Fatal("detter should eat the det explosion")
+	}
+	if mate.Shield != mate.Ship.MaxShield {
+		t.Fatal("detter's teammates should be TDETTEAMSAFE")
+	}
+}
+
 func TestTurnRateSlowsWithSpeed(t *testing.T) {
 	g := NewGame()
 	p := addPlayer(t, g, "s", "F", "CA").player
