@@ -610,6 +610,9 @@ function frame() {
       const s = R.project(pl.x, 700, pl.y);
       if (s) labels.push({ x: s[0], y: s[1] - 8, text: `${pl.name} ${pl.a}`,
                            color: TEAM_CSS[pl.o] || TEAM_CSS.I, alpha });
+      const sb = R.project(pl.x, -700, pl.y); // range below, same rules as the name
+      if (sb) labels.push({ x: sb[0], y: sb[1] + 14, text: `${Math.round(dist)}`,
+                            color: TEAM_CSS[pl.o] || TEAM_CSS.I, alpha });
     }
   }
   for (const p of players) {
@@ -620,6 +623,9 @@ function frame() {
       const s = R.project(p.x, 260, p.y);
       if (s) labels.push({ x: s[0], y: s[1] - 6, text: `${p.nm} (${p.s})`,
                            color: TEAM_CSS[p.tm], alpha });
+      const sb = R.project(p.x, -260, p.y); // range below, same rules as the name
+      if (sb) labels.push({ x: sb[0], y: sb[1] + 12, text: `${Math.round(dist)}`,
+                            color: TEAM_CSS[p.tm], alpha });
     }
   }
   for (const tp of torps) {
