@@ -335,11 +335,12 @@ Renderer.prototype.drawShip = function (px, py, yaw, team, dist, dim) {
 };
 
 Renderer.prototype.drawTorp = function (px, py, team, dist) {
-  if (dist > SHIP_MAX) return;
+  if (dist > BOOM_MAX) return;
+  const alpha = dist < SHIP_MAX ? 1 : 1 - (dist - SHIP_MAX) / (BOOM_MAX - SHIP_MAX);
   const color = TEAM_COLORS[team] || TEAM_COLORS.I;
   const size = Math.min(10, Math.max(2.5, 90 / Math.max(dist, 1) * this.pxFactor));
   this.points.push(px, 0, py, Math.min(1, color[0] + .3), Math.min(1, color[1] + .3),
-                   Math.min(1, color[2] + .3), 1, size);
+                   Math.min(1, color[2] + .3), alpha, size);
 };
 
 Renderer.prototype.drawExplosion = function (px, py, age) { // age 0..1
@@ -352,6 +353,9 @@ Renderer.prototype.drawExplosion = function (px, py, age) { // age 0..1
 };
 
 Renderer.prototype.drawPhaser = function (x1, y1, x2, y2, team, alpha) {
+  const d1 = Math.hypot(x1 - this.eye[0], y1 - this.eye[2]);
+  const d2 = Math.hypot(x2 - this.eye[0], y2 - this.eye[2]);
+  if (Math.min(d1, d2) > BOOM_MAX) return; // beams flash like explosions do
   const c = TEAM_COLORS[team] || TEAM_COLORS.I;
   this.lines.push(x1, EYE_HEIGHT - 60, y1, c[0], c[1], c[2], alpha,
                   x2, 0, y2, c[0], c[1], c[2], alpha);
