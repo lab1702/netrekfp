@@ -1,1 +1,4 @@
-netrekfp.exe
+# compiled binaries - windows and linux
+/netrekfp
+*.exe
+*.test
