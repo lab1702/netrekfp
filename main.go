@@ -1,6 +1,7 @@
 package main
 
 import (
+	"compress/gzip"
 	"embed"
 	"flag"
 	"io"
@@ -9,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -26,7 +28,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	http.Handle("/", http.FileServer(http.FS(sub)))
+	http.Handle("/", gzipHandler(http.FileServer(http.FS(sub))))
 	http.HandleFunc("/ws", srv.handleWS)
 	http.HandleFunc("/health", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -49,4 +51,33 @@ func main() {
 
 	log.Printf("netrekfp listening on %s", *addr)
 	log.Fatal(http.ListenAndServe(*addr, nil))
+}
+
+type gzipWriter struct {
+	http.ResponseWriter
+	gz *gzip.Writer
+}
+
+func (g *gzipWriter) WriteHeader(code int) {
+	g.Header().Del("Content-Length") // no longer valid for the compressed body
+	g.ResponseWriter.WriteHeader(code)
+}
+
+func (g *gzipWriter) Write(b []byte) (int, error) {
+	g.Header().Del("Content-Length")
+	return g.gz.Write(b)
+}
+
+func gzipHandler(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Vary", "Accept-Encoding")
+		if !strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
+			next.ServeHTTP(w, r)
+			return
+		}
+		w.Header().Set("Content-Encoding", "gzip")
+		gz := gzip.NewWriter(w)
+		defer gz.Close()
+		next.ServeHTTP(&gzipWriter{w, gz}, r)
+	})
 }

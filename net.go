@@ -26,6 +26,9 @@ type Client struct {
 
 var upgrader = websocket.Upgrader{
 	ReadBufferSize: 1024, WriteBufferSize: 16384,
+	// permessage-deflate when the browser offers it: the 10 Hz JSON snapshots
+	// are highly repetitive and compress ~5-10x
+	EnableCompression: true,
 	// ponytail: same-origin game served by this binary; tighten if ever exposed
 	CheckOrigin: func(r *http.Request) bool { return true },
 }
