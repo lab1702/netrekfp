@@ -39,8 +39,24 @@
   #join p { margin: 10px 0; }
   #name { width: 240px; text-align: center; }
   .btn-sm { height: 26px; padding: 0 10px; font-size: 11.5px; }
-  button.sel { border-color: var(--amber); background: var(--amber-wash);
-               box-shadow: 0 0 8px var(--amber-glow); }
+  /* selection must be readable at a glance: chosen option fills and glows in
+     its own color (team color or system amber), the rest recede */
+  #teams button:not(.sel), #ships button:not(.sel) { opacity: .5; }
+  #teams button:not(.sel):hover, #ships button:not(.sel):hover { opacity: .85; }
+  /* static per-accent selection classes: this embedded Chromium resolves
+     neither color-mix() nor inline-style custom properties inside rules */
+  button.sel { font-weight: 700; }
+  button.sel.sel-F { border-color: #ffd54f; background: rgba(255,213,79,.20);
+                     box-shadow: 0 0 12px rgba(255,213,79,.4), inset 0 0 0 1px #ffd54f; }
+  button.sel.sel-R { border-color: #ef5350; background: rgba(239,83,80,.20);
+                     box-shadow: 0 0 12px rgba(239,83,80,.4), inset 0 0 0 1px #ef5350; }
+  button.sel.sel-K { border-color: #66bb6a; background: rgba(102,187,106,.20);
+                     box-shadow: 0 0 12px rgba(102,187,106,.4), inset 0 0 0 1px #66bb6a; }
+  button.sel.sel-O { border-color: #64b5f6; background: rgba(100,181,246,.20);
+                     box-shadow: 0 0 12px rgba(100,181,246,.4), inset 0 0 0 1px #64b5f6; }
+  button.sel.sel-A { border-color: var(--amber); background: oklch(0.80 0.16 75 / 0.20);
+                     box-shadow: 0 0 12px oklch(0.80 0.16 75 / 0.4),
+                                 inset 0 0 0 1px var(--amber); }
   button:disabled { opacity: .35; cursor: default; }
   #joinMsg { color: var(--danger); min-height: 1.4em; }
   #bots { margin-top: 2em; color: var(--fg-3); }

@@ -32,7 +32,7 @@ function buildJoinUI(counts) {
   teamsP.innerHTML = "";
   for (const tm of ["F", "R", "K", "O"]) {
     const b = document.createElement("button");
-    b.className = "l7-btn l7-btn--outline btn-sm";
+    b.className = `l7-btn l7-btn--outline btn-sm sel-${tm}`; // sel-* gated by .sel
     const n = counts ? (counts[tm] || 0) : 0;
     b.textContent = `${TEAM_NAMES[tm]} (${n})`;
     b.style.color = TEAM_CSS[tm]; // team colors are the game's, not the system's
@@ -44,7 +44,7 @@ function buildJoinUI(counts) {
   if (!shipsP.childElementCount) {
     for (const st of SHIP_TYPES) {
       const b = document.createElement("button");
-      b.className = "l7-btn l7-btn--outline btn-sm";
+      b.className = "l7-btn l7-btn--outline btn-sm sel-A"; // amber selection tint
       b.textContent = st;
       b.onclick = () => { selShip = st; refreshSel(); };
       b.dataset.ship = st;
