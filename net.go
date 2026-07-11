@@ -203,6 +203,9 @@ func (c *Client) readPump() {
 		case "balancebots":
 			c.srv.game.BalanceBots()
 			continue
+		case "fillbots":
+			c.srv.game.FillBots()
+			continue
 		case "clearbots":
 			c.srv.game.ClearBots()
 			continue

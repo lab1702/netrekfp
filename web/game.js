@@ -77,6 +77,7 @@ function buildBotControls(target, inline) {
     add("−" + tm, { t: "removebot", team: tm }, TEAM_CSS[tm]);
   if (!inline) target.appendChild(document.createElement("br"));
   add("BALANCE", { t: "balancebots" });
+  add("FILL", { t: "fillbots" });
   add("CLEAR", { t: "clearbots" });
 }
 function buildBotUI() {

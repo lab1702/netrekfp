@@ -44,6 +44,36 @@ func TestBotLifecycle(t *testing.T) {
 	}
 }
 
+func TestFillBots(t *testing.T) {
+	g := NewGame()
+	addPlayer(t, g, "h", "F", "CA")
+	g.FillBots()
+	g.mu.Lock()
+	counts := g.teamCounts()
+	g.mu.Unlock()
+	for _, tm := range teamLetters {
+		if counts[tm] != MaxPerTeam-1 {
+			t.Fatalf("team %s should be at %d, got %d", tm, MaxPerTeam-1, counts[tm])
+		}
+	}
+	// every team must still accept one human
+	for _, tm := range teamLetters {
+		c := &Client{send: make(chan []byte, 4)}
+		if _, deny := g.Join(c, "late", tm, "CA"); deny != "" {
+			t.Fatalf("human should fit on %s after FILL: %s", tm, deny)
+		}
+	}
+	// and now the server is exactly full
+	c := &Client{send: make(chan []byte, 4)}
+	if _, deny := g.Join(c, "extra", "F", "CA"); deny == "" {
+		t.Fatal("server should be full after filling the reserved slots")
+	}
+	// smoke: a full 124-bot server keeps ticking
+	for range 20 {
+		g.Tick()
+	}
+}
+
 // TestBotWar simulates five minutes of 4v4 bot play and checks the bots
 // actually fight and play the planet game without wedging the engine.
 func TestBotWar(t *testing.T) {

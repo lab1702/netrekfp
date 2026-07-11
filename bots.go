@@ -167,6 +167,30 @@ func (g *Game) BalanceBots() {
 	g.say("Bots balanced: %s %d v %s %d", teamNames[a], counts[a], teamNames[b], counts[b])
 }
 
+// FillBots packs every team with bots, leaving one open slot per team so a
+// human can always join any empire. 4 x 31 = 124, which fits under the
+// 128-player cap with exactly the four reserved slots to spare.
+func (g *Game) FillBots() {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	var counts [4]int
+	for _, p := range g.players {
+		if p != nil && p.Team != TeamNone {
+			counts[p.Team]++
+		}
+	}
+	added := 0
+	for team := 0; team < 4; team++ {
+		for counts[team] < MaxPerTeam-1 && g.addBot(team) {
+			counts[team]++
+			added++
+		}
+	}
+	if added > 0 {
+		g.say("%d bots added — one open slot left per team.", added)
+	}
+}
+
 func (g *Game) ClearBots() {
 	g.mu.Lock()
 	defer g.mu.Unlock()
