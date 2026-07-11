@@ -2,6 +2,8 @@
 
 ![netrekfp — cockpit view of a T-mode bot battle in Federation space](netrekfp.png)
 
+**Play it live: <https://www.lab1702.com/fpnetrek/>**
+
 Netrek from the cockpit: classic Netrek rules on the classic flat 100000×100000 galaxy, but
 instead of a 2D tactical view you look out of your ship at 3D planets and ships floating in
 space. Planets are huge up close, shrink to a dot as you fly away, and vanish past ~25k units.
