@@ -20,7 +20,7 @@ or with Docker:
 docker compose up -d
 ```
 
-then open http://localhost:8080 (WebGL required). Up to 128 players, 32 per team.
+then open http://localhost:9701 (WebGL required). Up to 128 players, 32 per team.
 
 **Bots:** the join screen has bot controls — `+F/+R/+K/+O` add a bot to a team, `−` removes one,
 `BALANCE` tops up the two most-populated teams to 4v4 (T-mode-ready in one click), `CLEAR` removes
