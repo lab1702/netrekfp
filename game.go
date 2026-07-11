@@ -98,6 +98,7 @@ type Player struct {
 	SelfDest     int64 // tick the armed self-destruct fires at; 0 = disarmed
 	SelfKill     bool  // died by self-destruct: KQUIT blowup spares teammates
 	LockPlanet   int   // planet lock (PFPLLOCK): auto-steer + auto-orbit; -1 off
+	LockCruise   int   // cruise speed the autopilot resumes when aligned
 
 	Bot *botState // non-nil for AI players
 
@@ -295,6 +296,7 @@ func (g *Game) Command(p *Player, cmd string, dir float64, val int) {
 		g.breakOrbit(p)
 	case "speed":
 		p.DesSpeed = min(val, p.Ship.MaxSpeed)
+		p.LockCruise = p.DesSpeed // while locked: pilot picks the cruise speed
 		p.RepairMode = false
 		g.breakOrbit(p)
 	case "lock":
@@ -309,6 +311,7 @@ func (g *Game) Command(p *Player, cmd string, dir float64, val int) {
 		if p.DesSpeed == 0 { // ponytail: Vanilla makes you throttle yourself
 			p.DesSpeed = p.Ship.MaxSpeed
 		}
+		p.LockCruise = p.DesSpeed
 		g.say("%s: locking onto %s", p.Name, g.planets[val].Name)
 	case "shields":
 		p.ShieldsUp = !p.ShieldsUp
@@ -597,10 +600,18 @@ func (g *Game) movePlayer(p *Player) {
 	s := p.Ship
 
 	// planet lock (redraw.c:581): steer at it every tick, slow to warp 2 at
-	// braking distance, orbit automatically on arrival
+	// braking distance, orbit automatically on arrival. Unlike Vanilla the
+	// autopilot also manages the throttle when misaligned: at high warp the
+	// turning circle (turns >> speed) can exceed the distance to the target,
+	// and the ship would circle it forever.
 	if p.LockPlanet >= 0 && p.Orbiting < 0 {
 		pl := g.planets[p.LockPlanet]
 		dist := math.Hypot(pl.X-p.X, pl.Y-p.Y)
+		want := math.Atan2(pl.Y-p.Y, pl.X-p.X)
+		p.DesSpeed = min(p.LockCruise, s.MaxSpeed)
+		if math.Abs(math.Remainder(p.Dir-want, 2*math.Pi)) > 0.3 {
+			p.DesSpeed = min(p.DesSpeed, maneuverSpeed(s, dist))
+		}
 		if dist-OrbDist/2 < 11500*float64(p.Speed*p.Speed)/float64(s.DecInt) &&
 			p.DesSpeed > 2 {
 			p.DesSpeed = 2
@@ -609,7 +620,7 @@ func (g *Game) movePlayer(p *Player) {
 			p.LockPlanet = -1
 			g.enterOrbit(p)
 		} else {
-			p.DesDir = math.Atan2(pl.Y-p.Y, pl.X-p.X)
+			p.DesDir = want
 		}
 	}
 
@@ -972,6 +983,18 @@ func (g *Game) planetFight() {
 		pl.Armies -= ab
 		p.Kills += 0.02 * float64(ab)
 	}
+}
+
+// maneuverSpeed: fastest warp whose turning circle fits in half the distance,
+// so a locked ship can actually converge on its target instead of orbiting it
+func maneuverSpeed(s *ShipStats, dist float64) int {
+	for spd := s.MaxSpeed; spd > 2; spd-- {
+		w := float64(s.Turns>>min(uint(spd), 30)) / 1000 * ByteRad // rad/tick
+		if w > 0 && float64(spd*Warp1)/w <= dist/2 {
+			return spd
+		}
+	}
+	return 2
 }
 
 // carryCapacity = trunc(kills to 0.01) * 2 (3 for AS); SB has no kills cap
