@@ -3,45 +3,57 @@
 <head>
 <meta charset="utf-8">
 <title>netrekfp</title>
+<link rel="stylesheet" href="lab1702.css">
 <style>
-  html, body { margin: 0; height: 100%; overflow: hidden; background: #000; color: #cfd8dc;
-               font: 13px/1.4 "Consolas", "Menlo", monospace; }
+  /* chrome follows the lab1702 design system; netrek team colors and all
+     in-game rendering (3D view, galactic map) stay historical */
+  html, body { height: 100%; overflow: hidden; background: var(--bg-0);
+               color: var(--fg-1); font-family: var(--font-mono); font-size: 13px;
+               line-height: 1.45; }
   canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
   #overlay, #map { pointer-events: none; }
   #map { display: none; }
-  .hud { position: absolute; user-select: none; pointer-events: none; text-shadow: 0 0 4px #000; }
+  .hud { position: absolute; user-select: none; pointer-events: none;
+         text-shadow: 0 0 4px oklch(0 0 0 / 0.8); }
   #hudLeft  { left: 12px; bottom: 12px; }
   #hudRight { right: 12px; bottom: 12px; text-align: right; }
   #hudTop   { left: 12px; top: 10px; }
-  #alert    { right: 12px; top: 10px; font-weight: bold; }
+  #alert    { right: 12px; top: 10px; font-weight: 600;
+              letter-spacing: var(--tracking-label); }
   #msgs { position: absolute; left: 12px; top: 42px; width: 46em; pointer-events: none;
-          text-shadow: 0 0 4px #000; }
+          color: var(--fg-2); text-shadow: 0 0 4px oklch(0 0 0 / 0.8); }
   #msgs div { opacity: .9; }
-  .bar { display: inline-block; width: 110px; height: 8px; background: #263238;
-         vertical-align: middle; margin-left: 6px; }
-  .bar i { display: block; height: 100%; background: #4caf50; }
-  #join { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
-          background: rgba(0,0,0,.85); z-index: 10; }
-  #join .panel { text-align: center; }
-  #join h1 { font-weight: normal; letter-spacing: .3em; color: #90caf9; }
-  #join input { background: #111; color: #eee; border: 1px solid #455a64; padding: 6px 10px;
-                font: inherit; text-align: center; }
-  #join button { background: #111; color: #eee; border: 1px solid #455a64; padding: 8px 14px;
-                 font: inherit; margin: 4px; cursor: pointer; }
-  #join button.sel { border-color: #90caf9; color: #90caf9; }
-  #join button:disabled { opacity: .3; cursor: default; }
-  #joinMsg { color: #ef9a9a; min-height: 1.4em; }
+  .bar { display: inline-block; width: 110px; height: 8px; background: var(--bg-3);
+         border-radius: var(--radius-1); vertical-align: middle; margin-left: 6px; }
+  .bar i { display: block; height: 100%; background: var(--green);
+           border-radius: var(--radius-1); }
+  #join { position: absolute; inset: 0; display: flex; align-items: center;
+          justify-content: center; background: oklch(0.10 0.008 100 / 0.92);
+          z-index: 10; }
+  #join::before { content: ""; position: absolute; inset: 0;
+                  background: var(--scanlines); pointer-events: none; }
+  #join .panel { position: relative; text-align: center; padding: 28px 36px; }
+  #join h1 { font-family: var(--font-mono); font-size: 22px; font-weight: 600;
+             letter-spacing: .3em; color: var(--amber); margin-bottom: 18px;
+             text-shadow: 0 0 16px var(--amber-glow); }
+  #join p { margin: 10px 0; }
+  #name { width: 240px; text-align: center; }
+  .btn-sm { height: 26px; padding: 0 10px; font-size: 11.5px; }
+  button.sel { border-color: var(--amber); background: var(--amber-wash);
+               box-shadow: 0 0 8px var(--amber-glow); }
+  button:disabled { opacity: .35; cursor: default; }
+  #joinMsg { color: var(--danger); min-height: 1.4em; }
+  #bots { margin-top: 2em; color: var(--fg-3); }
   #botPanel { position: absolute; right: 12px; top: 60px; z-index: 5; display: none;
-              background: rgba(10,14,18,.92); border: 1px solid #455a64; padding: 12px 16px;
-              text-align: center; }
-  #botPanel h3 { margin: 0 0 10px; font-weight: normal; letter-spacing: .2em; color: #90caf9;
-                 font-size: 13px; }
-  #botPanel button { background: #111; color: #eee; border: 1px solid #455a64; padding: 5px 9px;
-                     font: inherit; margin: 2px; cursor: pointer; }
-  #botPanel small { display: block; margin-top: 8px; opacity: .5; }
+              padding: 14px 18px; text-align: center; }
+  #botPanel h3 { font-family: var(--font-mono); font-size: 11px; font-weight: 500;
+                 text-transform: uppercase; letter-spacing: var(--tracking-label);
+                 color: var(--fg-3); margin-bottom: 10px; }
+  #botPanel button { margin: 2px; }
+  #botPanel small { display: block; margin-top: 8px; color: var(--fg-3); }
   .F { color: #ffd54f; } .R { color: #ef5350; } .K { color: #66bb6a; } .O { color: #64b5f6; }
-  #help { position: absolute; right: 12px; bottom: 90px; text-align: right; opacity: .45;
-          pointer-events: none; }
+  #help { position: absolute; right: 12px; bottom: 90px; text-align: right;
+          color: var(--fg-3); pointer-events: none; }
 </style>
 </head>
 <body>
@@ -49,8 +61,8 @@
 <canvas id="overlay"></canvas>
 <canvas id="map"></canvas>
 
-<div id="botPanel">
-  <h3>BOT MANAGEMENT</h3>
+<div id="botPanel" class="l7-card">
+  <h3>Bot Management</h3>
   <div id="botPanelButtons"></div>
   <small>\ or Esc closes</small>
 </div>
@@ -64,14 +76,14 @@
 0-9/=: warp &middot; s: shields &middot; o: orbit &middot; b: bomb &middot; z/x: beam up/down<br>
 c: cloak &middot; d: det &middot; R: repair &middot; m: map &middot; \: bots &middot; Q: self destruct</div>
 
-<div id="join"><div class="panel">
+<div id="join"><div class="panel l7-card">
   <h1>NETREK FP</h1>
-  <p><input id="name" maxlength="15" placeholder="call sign" autofocus></p>
+  <p><input id="name" class="l7-input" maxlength="15" placeholder="call sign" autofocus></p>
   <p id="teams"></p>
   <p id="ships"></p>
-  <p><button id="go">ENGAGE</button></p>
+  <p><button id="go" class="l7-btn l7-btn--solid">ENGAGE</button></p>
   <p id="joinMsg"></p>
-  <p id="bots" style="margin-top:2em; opacity:.8"></p>
+  <p id="bots"></p>
 </div></div>
 
 <script src="gl.js"></script>

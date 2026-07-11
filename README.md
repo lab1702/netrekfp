@@ -52,6 +52,10 @@ remaining ships are destroyed, the win is announced, and the galaxy resets (T-mo
 enough players remain). Either way, stats are discarded when a round ends. No database, nothing
 persists.
 
+UI chrome (join screen, HUD, panels) follows the lab1702 design system
+([web/lab1702.css](web/lab1702.css) — terminal-phosphor tokens, `l7-*` components); the netrek
+team colors and all in-game rendering are historical and deliberately outside the system.
+
 ## Controls
 
 | Input | Action |

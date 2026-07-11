@@ -1,0 +1,115 @@
+/* lab1702 design tokens — terminal-phosphor dark theme.
+   Netrek team colors (red/yellow/green/cyan) are historical and are NOT
+   part of this system; they stay hardcoded where the game uses them. */
+@import url("https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,400;0,500;0,600;0,700;1,400&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap");
+
+:root {
+  /* Surfaces (warm near-blacks) */
+  --bg-0: oklch(0.15 0.010 100);
+  --bg-1: oklch(0.18 0.012 100);
+  --bg-2: oklch(0.22 0.014 100);
+  --bg-3: oklch(0.26 0.016 100);
+
+  /* Foreground */
+  --fg-1: oklch(0.92 0.020 95);
+  --fg-2: oklch(0.70 0.020 95);
+  --fg-3: oklch(0.52 0.018 95);
+
+  /* Accents — phosphor amber + green */
+  --amber:      oklch(0.80 0.16 75);
+  --amber-dim:  oklch(0.68 0.13 75);
+  --amber-glow: oklch(0.80 0.16 75 / 0.18);
+  --amber-wash: oklch(0.80 0.16 75 / 0.08);
+  --green:      oklch(0.80 0.16 145);
+  --green-dim:  oklch(0.68 0.13 145);
+  --green-glow: oklch(0.80 0.16 145 / 0.18);
+  --green-wash: oklch(0.80 0.16 145 / 0.08);
+
+  --danger:      oklch(0.70 0.16 25);
+  --danger-wash: oklch(0.70 0.16 25 / 0.10);
+
+  /* Lines */
+  --border-1: oklch(0.32 0.018 100);
+  --border-2: oklch(0.42 0.020 100);
+
+  --on-accent:    oklch(0.17 0.02 75);
+  --link-hover:   oklch(0.88 0.14 78);
+  --selection-bg: oklch(0.80 0.16 75 / 0.25);
+
+  /* Type */
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --font-sans: "IBM Plex Sans", -apple-system, "Segoe UI", Helvetica, sans-serif;
+  --tracking-label: 0.08em;
+
+  /* Spacing / radii */
+  --radius-1: 2px;
+  --radius-2: 4px;
+  --radius-full: 999px;
+
+  /* Effects */
+  --shadow-card: 0 1px 0 oklch(0 0 0 / 0.4), 0 4px 16px oklch(0 0 0 / 0.35);
+  --shadow-overlay: 0 8px 40px oklch(0 0 0 / 0.6);
+  --focus-shadow: 0 0 0 1px var(--bg-0), 0 0 0 3px var(--amber);
+  --ease-out: cubic-bezier(0.2, 0, 0, 1);
+  --dur-fast: 120ms;
+  --scanlines: repeating-linear-gradient(
+    to bottom,
+    transparent 0px, transparent 2px,
+    oklch(0 0 0 / 0.12) 2px, oklch(0 0 0 / 0.12) 3px
+  );
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+::selection { background: var(--selection-bg); }
+
+a { color: var(--amber); text-decoration: none; }
+/* buttons rendered as <a> keep their own colors on hover */
+a:hover:not(.l7-btn) { color: var(--link-hover); text-decoration: underline; }
+
+/* mono uppercase section label */
+.l7-label {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-label);
+  color: var(--fg-3);
+}
+
+.l7-card {
+  background: var(--bg-1);
+  border: 1px solid var(--border-1);
+  border-radius: var(--radius-2);
+  box-shadow: var(--shadow-card);
+}
+
+.l7-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  font-family: var(--font-mono); font-weight: 500; letter-spacing: 0.02em;
+  border-radius: var(--radius-1); border: 1px solid transparent;
+  cursor: pointer; white-space: nowrap; user-select: none;
+  height: 36px; padding: 0 14px; font-size: 12.5px;
+  transition: background var(--dur-fast) var(--ease-out),
+              border-color var(--dur-fast) var(--ease-out),
+              color var(--dur-fast) var(--ease-out),
+              box-shadow var(--dur-fast) var(--ease-out);
+}
+.l7-btn:focus-visible { outline: none; box-shadow: var(--focus-shadow); }
+.l7-btn--solid { background: var(--amber); color: var(--on-accent); border-color: var(--amber); }
+.l7-btn--solid:hover { background: var(--link-hover); border-color: var(--link-hover); box-shadow: 0 0 12px var(--amber-glow); }
+.l7-btn--solid:active { background: var(--amber-dim); box-shadow: none; }
+.l7-btn--outline { background: transparent; color: var(--amber); border-color: var(--amber-dim); }
+.l7-btn--outline:hover { background: var(--amber-wash); border-color: var(--amber); }
+.l7-btn--outline:active { background: var(--amber-glow); }
+
+.l7-input {
+  font-family: var(--font-mono); font-size: 12.5px; color: var(--fg-1);
+  background: var(--bg-2); border: 1px solid var(--border-1);
+  border-radius: var(--radius-1); height: 36px; padding: 0 10px;
+  width: 100%;
+  transition: border-color var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out);
+}
+.l7-input::placeholder { color: var(--fg-3); }
+.l7-input:hover { border-color: var(--border-2); }
+.l7-input:focus { outline: none; border-color: var(--amber-dim); box-shadow: 0 0 8px var(--amber-glow); }

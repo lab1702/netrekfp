@@ -32,9 +32,10 @@ function buildJoinUI(counts) {
   teamsP.innerHTML = "";
   for (const tm of ["F", "R", "K", "O"]) {
     const b = document.createElement("button");
+    b.className = "l7-btn l7-btn--outline btn-sm";
     const n = counts ? (counts[tm] || 0) : 0;
     b.textContent = `${TEAM_NAMES[tm]} (${n})`;
-    b.style.color = TEAM_CSS[tm];
+    b.style.color = TEAM_CSS[tm]; // team colors are the game's, not the system's
     b.disabled = n >= 32;
     b.onclick = () => { selTeam = tm; refreshSel(); };
     b.dataset.team = tm;
@@ -43,6 +44,7 @@ function buildJoinUI(counts) {
   if (!shipsP.childElementCount) {
     for (const st of SHIP_TYPES) {
       const b = document.createElement("button");
+      b.className = "l7-btn l7-btn--outline btn-sm";
       b.textContent = st;
       b.onclick = () => { selShip = st; refreshSel(); };
       b.dataset.ship = st;
@@ -60,6 +62,7 @@ function buildBotControls(target, inline) {
   if (target.childElementCount) return;
   const add = (label, msg, color) => {
     const b = document.createElement("button");
+    b.className = "l7-btn l7-btn--outline btn-sm";
     b.textContent = label;
     if (color) b.style.color = color;
     b.onclick = () => send(msg);
@@ -266,7 +269,7 @@ const alertDiv = document.getElementById("alert");
 function bar(label, val, max, warnHigh) {
   const pct = Math.max(0, Math.min(100, val / max * 100));
   const bad = warnHigh ? pct > 70 : pct < 30;
-  const col = bad ? "#ef5350" : "#4caf50";
+  const col = bad ? "var(--danger)" : "var(--green)";
   return `${label} <span class="bar"><i style="width:${pct}%;background:${col}"></i></span>` +
          ` ${Math.round(val)}<br>`;
 }
@@ -287,7 +290,7 @@ function updateHUD(you, players) {
   let top = curSnap.tmode.on
     ? `T-MODE &nbsp; ${fmtTime(curSnap.tmode.left)}` : "pickup (need 4v4 for T-mode)";
   if (you.sd > 0)
-    top = `<span style="color:#ef5350;font-weight:bold">SELF DESTRUCT IN ${you.sd}</span><br>` + top;
+    top = `<span style="color:var(--danger);font-weight:bold">SELF DESTRUCT IN ${you.sd}</span><br>` + top;
   if (you.orb >= 0) {
     const pl = planets[you.orb];
     const fl = (pl.f & 8 ? "HOME " : "") + (pl.f & 1 ? "REPAIR " : "") +
@@ -302,8 +305,8 @@ function updateHUD(you, players) {
     if (p.i === myId || p.tm === you.tm || p.st !== "alive") continue;
     nearest = Math.min(nearest, Math.hypot(p.x - you.x, p.y - you.y));
   }
-  const [txt, col] = nearest < 7000 ? ["RED ALERT", "#ef5350"] :
-    nearest < 15000 ? ["YELLOW ALERT", "#ffd54f"] : ["CONDITION GREEN", "#66bb6a"];
+  const [txt, col] = nearest < 7000 ? ["RED ALERT", "var(--danger)"] :
+    nearest < 15000 ? ["YELLOW ALERT", "var(--amber)"] : ["CONDITION GREEN", "var(--green)"];
   alertDiv.textContent = txt;
   alertDiv.style.color = col;
 }
