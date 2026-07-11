@@ -40,6 +40,10 @@ example.com {
 }
 ```
 
+WebSocket connections are same-origin only (Caddy preserves the Host header, so the above
+just works). If your proxy rewrites Host, set `NETREKFP_ORIGINS` to a comma-separated list
+of allowed origins (e.g. `https://example.com`), or `*` to disable the check.
+
 **Bots:** the join screen has bot controls — `+F/+R/+K/+O` add a bot to a team, `−` removes one,
 `BALANCE` tops up the two most-populated teams to 4v4 (T-mode-ready in one click), `CLEAR` removes
 all bots. Bot AI is modeled on [lab1702/netrek-web](https://github.com/lab1702/netrek-web): threat

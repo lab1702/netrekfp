@@ -2,6 +2,7 @@ package main
 
 import (
 	"math"
+	"net/http"
 	"testing"
 )
 
@@ -283,6 +284,40 @@ func TestGenocideOfEmptyTeamIgnored(t *testing.T) {
 	}
 	if g.planets[20].Armies == topArmies {
 		t.Fatal("wiping an empire nobody plays for must not reset the galaxy")
+	}
+}
+
+func TestCheckOrigin(t *testing.T) {
+	req := func(origin, host string) *http.Request {
+		r, _ := http.NewRequest("GET", "/ws", nil)
+		r.Host = host
+		if origin != "" {
+			r.Header.Set("Origin", origin)
+		}
+		return r
+	}
+	if !checkOrigin(req("http://localhost:9701", "localhost:9701")) {
+		t.Fatal("same origin should pass")
+	}
+	if !checkOrigin(req("https://www.lab1702.com", "www.lab1702.com")) {
+		t.Fatal("same origin behind a host-preserving proxy should pass")
+	}
+	if checkOrigin(req("https://evil.example", "www.lab1702.com")) {
+		t.Fatal("cross origin must be rejected")
+	}
+	if !checkOrigin(req("", "localhost:9701")) {
+		t.Fatal("no Origin header (non-browser client) should pass")
+	}
+	t.Setenv("NETREKFP_ORIGINS", "https://game.example, https://other.example")
+	if !checkOrigin(req("https://other.example", "internal-host")) {
+		t.Fatal("listed origin should pass with override")
+	}
+	if checkOrigin(req("https://evil.example", "internal-host")) {
+		t.Fatal("unlisted origin must be rejected with override")
+	}
+	t.Setenv("NETREKFP_ORIGINS", "*")
+	if !checkOrigin(req("https://anywhere.example", "internal-host")) {
+		t.Fatal("* should disable the check")
 	}
 }
 

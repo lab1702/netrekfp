@@ -5,6 +5,8 @@ import (
 	"log"
 	"math"
 	"net/http"
+	"net/url"
+	"os"
 	"strings"
 	"sync"
 
@@ -29,8 +31,35 @@ var upgrader = websocket.Upgrader{
 	// permessage-deflate when the browser offers it: the 10 Hz JSON snapshots
 	// are highly repetitive and compress ~5-10x
 	EnableCompression: true,
-	// ponytail: same-origin game served by this binary; tighten if ever exposed
-	CheckOrigin: func(r *http.Request) bool { return true },
+	CheckOrigin:       checkOrigin,
+}
+
+// checkOrigin: same-origin by default — a random website must not be able to
+// open a socket and play as whoever visits it. Browsers always send Origin on
+// websocket upgrades; requests without one (curl, bots' test clients) pass.
+// NETREKFP_ORIGINS overrides for proxies that rewrite Host: a comma-separated
+// list of allowed origins, or "*" to disable the check.
+func checkOrigin(r *http.Request) bool {
+	origin := r.Header.Get("Origin")
+	if origin == "" {
+		return true
+	}
+	if allowed := os.Getenv("NETREKFP_ORIGINS"); allowed != "" {
+		if allowed == "*" {
+			return true
+		}
+		for _, o := range strings.Split(allowed, ",") {
+			if strings.EqualFold(strings.TrimSpace(o), origin) {
+				return true
+			}
+		}
+		return false
+	}
+	u, err := url.Parse(origin)
+	if err != nil {
+		return false
+	}
+	return strings.EqualFold(u.Host, r.Host)
 }
 
 type inMsg struct {
