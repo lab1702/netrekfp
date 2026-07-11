@@ -313,6 +313,14 @@ function updateHUD(you, players) {
 
   let top = curSnap.tmode.on
     ? `T-MODE &nbsp; ${fmtTime(curSnap.tmode.left)}` : "pickup (need 4v4 for T-mode)";
+  if (curSnap.tmode.on) {
+    const counts = {};
+    for (const pl of planets) counts[pl.o] = (counts[pl.o] || 0) + 1;
+    top += "<br>" + [["FED", "F"], ["ROM", "R"], ["KLI", "K"], ["ORI", "O"], ["IND", "I"]]
+      .map(([nm, l]) =>
+        `<span style="color:${TEAM_CSS[l]}">${nm}: ${counts[l] || 0}</span>`)
+      .join(", ");
+  }
   if (you.lk >= 0)
     top += `<br><span style="color:var(--amber)">LOCKED &rarr; ${planets[you.lk].name}</span>`;
   if (you.sd > 0)
