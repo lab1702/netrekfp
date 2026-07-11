@@ -102,7 +102,12 @@ function tryJoin() {
 function send(m) { if (ws && ws.readyState === 1) ws.send(JSON.stringify(m)); }
 
 function connect() {
-  ws = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws");
+  // resolve relative to the page so a reverse proxy can mount us under a
+  // subpath (e.g. caddy handle_path /netrekfp/*)
+  const base = location.pathname.endsWith("/")
+    ? location.pathname : location.pathname.replace(/[^/]*$/, "");
+  ws = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") +
+    location.host + base + "ws");
   ws.onmessage = e => handle(JSON.parse(e.data));
   ws.onclose = () => {
     joined = false; joinDiv.style.display = "flex";

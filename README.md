@@ -22,6 +22,18 @@ docker compose up -d
 
 then open http://localhost:9701 (WebGL required). Up to 128 players, 32 per team.
 
+Runs standalone or behind a path-stripping reverse proxy — the client resolves its
+WebSocket relative to the page URL. Caddy example:
+
+```
+example.com {
+    redir /netrekfp /netrekfp/ 301
+    handle_path /netrekfp/* {
+        reverse_proxy localhost:9701
+    }
+}
+```
+
 **Bots:** the join screen has bot controls — `+F/+R/+K/+O` add a bot to a team, `−` removes one,
 `BALANCE` tops up the two most-populated teams to 4v4 (T-mode-ready in one click), `CLEAR` removes
 all bots. Bot AI is modeled on [lab1702/netrek-web](https://github.com/lab1702/netrek-web): threat
