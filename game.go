@@ -97,8 +97,7 @@ type Player struct {
 	WhoDead      int // killer id for explosion chain credit (daemon.c blowup), -1
 	SelfDest     int64 // tick the armed self-destruct fires at; 0 = disarmed
 	SelfKill     bool  // died by self-destruct: KQUIT blowup spares teammates
-	LockPlanet   int   // planet lock (PFPLLOCK): auto-steer + auto-orbit; -1 off
-	LockCruise   int   // cruise speed the autopilot resumes when aligned
+	LockPlanet   int   // planet lock (PFPLLOCK): full autopilot; -1 off
 
 	Bot *botState // non-nil for AI players
 
@@ -296,8 +295,8 @@ func (g *Game) Command(p *Player, cmd string, dir float64, val int) {
 		g.breakOrbit(p)
 	case "speed":
 		p.DesSpeed = min(val, p.Ship.MaxSpeed)
-		p.LockCruise = p.DesSpeed // while locked: pilot picks the cruise speed
 		p.RepairMode = false
+		p.LockPlanet = -1 // manual throttle overrides the autopilot
 		g.breakOrbit(p)
 	case "lock":
 		if val < 0 || val >= len(g.planets) {
@@ -308,10 +307,6 @@ func (g *Game) Command(p *Player, cmd string, dir float64, val int) {
 		p.Beaming = 0
 		p.RepairMode = false
 		g.breakOrbit(p)
-		if p.DesSpeed == 0 { // ponytail: Vanilla makes you throttle yourself
-			p.DesSpeed = p.Ship.MaxSpeed
-		}
-		p.LockCruise = p.DesSpeed
 		g.say("%s: locking onto %s", p.Name, g.planets[val].Name)
 	case "shields":
 		p.ShieldsUp = !p.ShieldsUp
@@ -599,18 +594,17 @@ func (g *Game) Tick() {
 func (g *Game) movePlayer(p *Player) {
 	s := p.Ship
 
-	// planet lock (redraw.c:581): steer at it every tick, slow to warp 2 at
-	// braking distance, orbit automatically on arrival. Unlike Vanilla the
-	// autopilot also manages the throttle when misaligned: at high warp the
-	// turning circle (turns >> speed) can exceed the distance to the target,
-	// and the ship would circle it forever.
+	// planet lock: full autopilot (steering from Vanilla redraw.c:581, but the
+	// throttle is automatic too — shortest time to arrival). Slows only when
+	// misaligned enough that the turning circle (turns >> speed) wouldn't
+	// converge, otherwise maximum warp, then brakes into orbit.
 	if p.LockPlanet >= 0 && p.Orbiting < 0 {
 		pl := g.planets[p.LockPlanet]
 		dist := math.Hypot(pl.X-p.X, pl.Y-p.Y)
 		want := math.Atan2(pl.Y-p.Y, pl.X-p.X)
-		p.DesSpeed = min(p.LockCruise, s.MaxSpeed)
+		p.DesSpeed = s.MaxSpeed
 		if math.Abs(math.Remainder(p.Dir-want, 2*math.Pi)) > 0.3 {
-			p.DesSpeed = min(p.DesSpeed, maneuverSpeed(s, dist))
+			p.DesSpeed = maneuverSpeed(s, dist)
 		}
 		if dist-OrbDist/2 < 11500*float64(p.Speed*p.Speed)/float64(s.DecInt) &&
 			p.DesSpeed > 2 {

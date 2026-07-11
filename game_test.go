@@ -312,8 +312,9 @@ func TestPlanetLockAutoOrbit(t *testing.T) {
 	if p.LockPlanet != target {
 		t.Fatal("lock should be set")
 	}
-	if p.DesSpeed != p.Ship.MaxSpeed {
-		t.Fatal("locking while parked should throttle up")
+	g.Tick()
+	if p.DesSpeed == 0 {
+		t.Fatal("autopilot should throttle up on its own")
 	}
 	for i := 0; i < 400 && p.Orbiting != target; i++ {
 		g.Tick()
@@ -326,7 +327,7 @@ func TestPlanetLockAutoOrbit(t *testing.T) {
 		t.Fatal("lock should clear on orbit entry")
 	}
 
-	// manual course breaks a lock
+	// manual course or speed breaks a lock; re-lock retargets
 	g.Command(p, "lock", 0, 0)
 	if p.LockPlanet != 0 || p.Orbiting != -1 {
 		t.Fatal("re-lock should break orbit and set the new target")
@@ -334,6 +335,11 @@ func TestPlanetLockAutoOrbit(t *testing.T) {
 	g.Command(p, "course", 1.0, 0)
 	if p.LockPlanet != -1 {
 		t.Fatal("manual course should clear the lock")
+	}
+	g.Command(p, "lock", 0, 0)
+	g.Command(p, "speed", 0, 5)
+	if p.LockPlanet != -1 {
+		t.Fatal("manual speed should clear the lock")
 	}
 }
 
