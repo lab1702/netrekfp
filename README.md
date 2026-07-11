@@ -70,6 +70,7 @@ team colors and all in-game rendering are historical and deliberately outside th
 | left-click / `t` | fire torpedo toward pointer |
 | middle-click / `f` | fire phaser toward pointer |
 | `p` | player list: 4 team columns, sorted by kills |
+| Enter / shift+Enter | team chat / all chat (Esc cancels) |
 | `0`–`9`, `=` | warp speed (= is max) |
 | `s` | shields |
 | `o` | orbit (warp ≤ 2, near planet) |

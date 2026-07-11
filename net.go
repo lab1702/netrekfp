@@ -40,6 +40,22 @@ type inMsg struct {
 	Ship string  `json:"ship"`
 	D    float64 `json:"d"`
 	V    int     `json:"v"`
+	To   string  `json:"to"`
+	Text string  `json:"text"`
+}
+
+// printable ASCII only, capped — same rule as player names
+func sanitizeText(s string, maxLen int) string {
+	s = strings.Map(func(r rune) rune {
+		if r < 32 || r > 126 {
+			return -1
+		}
+		return r
+	}, s)
+	if len(s) > maxLen {
+		s = s[:maxLen]
+	}
+	return strings.TrimSpace(s)
 }
 
 // ---- wire formats (field names are what the client reads) ----
@@ -127,6 +143,7 @@ type wireSnap struct {
 	Tmode   wireTmode      `json:"tmode"`
 	Msgs    []string       `json:"msgs"`
 	Booms   []Boom         `json:"booms"`
+	Chats   []Chat         `json:"chats"`
 	Counts  map[string]int `json:"counts"`
 }
 
@@ -174,16 +191,16 @@ func (c *Client) readPump() {
 		if math.IsNaN(m.D) || math.IsInf(m.D, 0) {
 			continue
 		}
-		if m.T == "join" {
-			name := strings.Map(func(r rune) rune {
-				if r < 32 || r > 126 {
-					return -1
+		if m.T == "chat" {
+			if c.player != nil {
+				if text := sanitizeText(m.Text, 120); text != "" {
+					c.srv.game.Chat(c.player, m.To, text)
 				}
-				return r
-			}, m.Name)
-			if len(name) > 15 {
-				name = name[:15]
 			}
+			continue
+		}
+		if m.T == "join" {
+			name := sanitizeText(m.Name, 15)
 			if name == "" {
 				name = "guest"
 			}
@@ -275,10 +292,13 @@ func (s *Server) broadcast() {
 		Msgs: append([]string{}, g.msgs...), Booms: append([]Boom{}, g.booms...),
 		Counts: g.teamCounts(),
 	}
+	chats := append([]Chat{}, g.chats...)
+
 	// consumed: anything Command() appends between broadcasts ships exactly once
 	g.msgs = g.msgs[:0]
 	g.booms = g.booms[:0]
 	g.phasers = g.phasers[:0]
+	g.chats = g.chats[:0]
 
 	// sends happen under s.mu so a disconnecting client can't close its channel
 	// mid-fanout; the sends are non-blocking so holding the lock is safe
@@ -310,6 +330,12 @@ func (s *Server) broadcast() {
 			vis = append(vis, wp)
 		}
 		mine.Players = vis
+		mine.Chats = nil
+		for _, ch := range chats {
+			if chatVisible(ch, p.Team) {
+				mine.Chats = append(mine.Chats, ch)
+			}
+		}
 		data, err := json.Marshal(&mine)
 		if err != nil {
 			continue

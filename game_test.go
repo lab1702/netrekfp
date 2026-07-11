@@ -286,6 +286,32 @@ func TestGenocideOfEmptyTeamIgnored(t *testing.T) {
 	}
 }
 
+func TestChat(t *testing.T) {
+	g := NewGame()
+	fed := addPlayer(t, g, "fed", "F", "CA").player
+	g.Chat(fed, "team", "ogg the base")
+	g.Chat(fed, "all", "gg")
+	g.Chat(fed, "bogus", "defaults to all")
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if len(g.chats) != 3 {
+		t.Fatalf("expected 3 queued chats, got %d", len(g.chats))
+	}
+	team, all := g.chats[0], g.chats[1]
+	if !chatVisible(team, TeamFed) || chatVisible(team, TeamRom) {
+		t.Fatal("team chat must reach own team only")
+	}
+	if !chatVisible(all, TeamFed) || !chatVisible(all, TeamRom) {
+		t.Fatal("all chat must reach everyone")
+	}
+	if g.chats[2].To != "all" {
+		t.Fatal("unknown destination should default to all")
+	}
+	if sanitizeText("  hi\x00\x1b<b>&there\t ", 120) != "hi<b>&there" {
+		t.Fatalf("sanitize wrong: %q", sanitizeText("  hi\x00\x1b<b>&there\t ", 120))
+	}
+}
+
 func TestSpawnAtHomeworld(t *testing.T) {
 	g := NewGame()
 	for _, tc := range []struct {

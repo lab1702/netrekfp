@@ -178,6 +178,7 @@ function handle(m) {
       for (const b of m.booms || [])
         booms.push({ ...b, at: snapAt });
       for (const txt of m.msgs || []) logMsg(txt);
+      for (const c of m.chats || []) logChat(c);
       if (playerListDiv.style.display === "block") renderPlayerList();
       if (m.you.st === "dead" && joined) {
         joined = false;
@@ -193,6 +194,47 @@ function handle(m) {
       break;
     }
   }
+}
+
+// ---------- chat: ALL and TEAM logs on the right, one input box ----------
+const chatBox = document.getElementById("chatBox");
+const chatBoxLabel = document.getElementById("chatBoxLabel");
+const chatInput = document.getElementById("chatInput");
+let chatTo = "team";
+
+function openChat(to) {
+  chatTo = to;
+  chatBoxLabel.textContent = to.toUpperCase();
+  chatBox.style.display = "flex";
+  chatInput.value = "";
+  chatInput.focus();
+}
+function closeChat() {
+  chatBox.style.display = "none";
+  chatInput.blur();
+}
+chatInput.addEventListener("keydown", e => {
+  e.stopPropagation();
+  if (e.key === "Enter") {
+    const text = chatInput.value.trim();
+    if (text) send({ t: "chat", to: chatTo, text });
+    closeChat();
+  } else if (e.key === "Escape") {
+    closeChat();
+  }
+});
+
+function logChat(c) {
+  const log = document.getElementById(c.to === "team" ? "chatTeamLog" : "chatAllLog");
+  const d = document.createElement("div");
+  const who = document.createElement("span");
+  who.textContent = c.fm + ": ";
+  who.style.color = TEAM_CSS[c.tm] || TEAM_CSS.I;
+  d.appendChild(who);
+  d.appendChild(document.createTextNode(c.tx));
+  log.appendChild(d);
+  while (log.childElementCount > 7) log.firstChild.remove();
+  setTimeout(() => { d.style.transition = "opacity 1s"; d.style.opacity = 0; }, 14000);
 }
 
 // ---------- messages ----------
@@ -249,6 +291,8 @@ addEventListener("mousedown", e => {
 
 addEventListener("keydown", e => {
   if (!joined) return;
+  if (document.activeElement === chatInput) return; // typing a message
+  if (e.key === "Enter") { openChat(e.shiftKey ? "all" : "team"); e.preventDefault(); return; }
   if (e.key >= "0" && e.key <= "9") { send({ t: "speed", v: +e.key }); return; }
   const you = curSnap ? interpYou() : null;
   // some input paths deliver shift+letter as the lowercase key with the

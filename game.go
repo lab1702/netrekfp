@@ -58,6 +58,19 @@ type Boom struct {
 	S float64 `json:"s"` // visual scale: 0.35 torp, ships blowup-base/100
 }
 
+type Chat struct {
+	From string `json:"fm"`
+	Tm   string `json:"tm"` // sender team letter, for coloring
+	To   string `json:"to"` // "all" or "team"
+	Text string `json:"tx"`
+	team int    // sender team index, for recipient filtering
+}
+
+// chatVisible: TEAM messages only reach the sender's team; ALL reach everyone
+func chatVisible(c Chat, team int) bool {
+	return c.To == "all" || c.team == team
+}
+
 type Player struct {
 	ID     int
 	Name   string
@@ -125,6 +138,7 @@ type Game struct {
 	msgs    []string
 	booms   []Boom
 	phasers []PhaserFx
+	chats   []Chat
 }
 
 func NewGame() *Game {
@@ -350,6 +364,22 @@ func (g *Game) Command(p *Player, cmd string, dir float64, val int) {
 		p.Status = "dead"
 		p.Team = TeamNone
 	}
+}
+
+// Chat queues a player message; works while dead (you can still talk from the
+// outfit screen) and deliberately does not disarm an armed self destruct.
+func (g *Game) Chat(p *Player, to, text string) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if p.Team == TeamNone {
+		return
+	}
+	if to != "team" {
+		to = "all"
+	}
+	g.chats = append(g.chats, Chat{
+		From: p.Name, Tm: teamLetter(p.Team), To: to, Text: text, team: p.Team,
+	})
 }
 
 func (g *Game) breakOrbit(p *Player) {
