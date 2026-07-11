@@ -28,6 +28,9 @@ func main() {
 	}
 	http.Handle("/", http.FileServer(http.FS(sub)))
 	http.HandleFunc("/ws", srv.handleWS)
+	http.HandleFunc("/health", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
 
 	if dir := os.Getenv("NETREKFP_SHOTDIR"); dir != "" {
 		// dev only: lets the page dump its framebuffer for headless inspection
