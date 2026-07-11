@@ -11,7 +11,8 @@ const FOV = 65 * Math.PI / 180;
 const EYE_HEIGHT = 160;
 const PLANET_RADIUS = 600;        // ORBDIST is 800, so orbits skim the surface
 const PLANET_FADE = 18000, PLANET_MAX = 25000;
-const SHIP_FADE = 10000, SHIP_MAX = 14000;
+const SHIP_FADE = 10000, SHIP_MAX = 20000; // matches the minimap radar range
+const BOOM_MAX = 30000; // distant battle flashes, but not cross-galaxy
 const SHIP_SCALE = 140;
 
 // ---------- matrix helpers (column-major mat4) ----------
@@ -342,6 +343,7 @@ Renderer.prototype.drawTorp = function (px, py, team, dist) {
 };
 
 Renderer.prototype.drawExplosion = function (px, py, age) { // age 0..1
+  if (Math.hypot(px - this.eye[0], py - this.eye[2]) > BOOM_MAX) return;
   const r = 100 + age * 900;
   this.gl.depthMask(false); // translucent shell must not occlude torps/beams
   this.drawMesh(this.sphereBuf, this.sphereCount, true,
