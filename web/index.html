@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>netrekfp</title>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #000; color: #cfd8dc;
+               font: 13px/1.4 "Consolas", "Menlo", monospace; }
+  canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+  #overlay, #map { pointer-events: none; }
+  #map { display: none; }
+  .hud { position: absolute; user-select: none; pointer-events: none; text-shadow: 0 0 4px #000; }
+  #hudLeft  { left: 12px; bottom: 12px; }
+  #hudRight { right: 12px; bottom: 12px; text-align: right; }
+  #hudTop   { left: 12px; top: 10px; }
+  #alert    { right: 12px; top: 10px; font-weight: bold; }
+  #msgs { position: absolute; left: 12px; top: 42px; width: 46em; pointer-events: none;
+          text-shadow: 0 0 4px #000; }
+  #msgs div { opacity: .9; }
+  .bar { display: inline-block; width: 110px; height: 8px; background: #263238;
+         vertical-align: middle; margin-left: 6px; }
+  .bar i { display: block; height: 100%; background: #4caf50; }
+  #join { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+          background: rgba(0,0,0,.85); z-index: 10; }
+  #join .panel { text-align: center; }
+  #join h1 { font-weight: normal; letter-spacing: .3em; color: #90caf9; }
+  #join input { background: #111; color: #eee; border: 1px solid #455a64; padding: 6px 10px;
+                font: inherit; text-align: center; }
+  #join button { background: #111; color: #eee; border: 1px solid #455a64; padding: 8px 14px;
+                 font: inherit; margin: 4px; cursor: pointer; }
+  #join button.sel { border-color: #90caf9; color: #90caf9; }
+  #join button:disabled { opacity: .3; cursor: default; }
+  #joinMsg { color: #ef9a9a; min-height: 1.4em; }
+  .F { color: #ffd54f; } .R { color: #ef5350; } .K { color: #66bb6a; } .O { color: #64b5f6; }
+  #help { position: absolute; right: 12px; bottom: 90px; text-align: right; opacity: .45;
+          pointer-events: none; }
+</style>
+</head>
+<body>
+<canvas id="gl"></canvas>
+<canvas id="overlay"></canvas>
+<canvas id="map"></canvas>
+
+<div id="hudTop" class="hud"></div>
+<div id="alert" class="hud"></div>
+<div id="msgs"></div>
+<div id="hudLeft" class="hud"></div>
+<div id="hudRight" class="hud"></div>
+<div id="help" class="hud">right-click: course &middot; left: torp &middot; middle/p: phaser<br>
+0-9/=: warp &middot; s: shields &middot; o: orbit &middot; b: bomb &middot; z/x: beam up/down<br>
+c: cloak &middot; d: det &middot; R: repair &middot; m: map</div>
+
+<div id="join"><div class="panel">
+  <h1>NETREK FP</h1>
+  <p><input id="name" maxlength="15" placeholder="call sign" autofocus></p>
+  <p id="teams"></p>
+  <p id="ships"></p>
+  <p><button id="go">ENGAGE</button></p>
+  <p id="joinMsg"></p>
+</div></div>
+
+<script src="gl.js"></script>
+<script src="game.js"></script>
+</body>
+</html>
