@@ -96,6 +96,8 @@ type Player struct {
 	LastTorpTick int64
 	WhoDead      int // killer id for explosion chain credit (daemon.c blowup), -1
 
+	Bot *botState // non-nil for AI players
+
 	client *Client // nil for test players
 }
 
@@ -422,12 +424,33 @@ func (g *Game) enterOrbit(p *Player) {
 	}
 }
 
+// teamHasPlayers: does anyone (human or bot) fly for this team?
+func (g *Game) teamHasPlayers(team int) bool {
+	for _, p := range g.players {
+		if p != nil && p.Team == team {
+			return true
+		}
+	}
+	return false
+}
+
+// thirdSpace: t-mode forbids bombing planets of teams nobody flies for
+// (Vanilla bomb_planet's "We're at peace with the ..." rule)
+func (g *Game) thirdSpace(pl *Planet) bool {
+	return g.tmode && pl.Owner != TeamNone && !g.teamHasPlayers(pl.Owner)
+}
+
 func (g *Game) startBomb(p *Player) {
 	if p.Orbiting < 0 {
 		return
 	}
 	pl := g.planets[p.Orbiting]
 	if pl.Owner == p.Team {
+		return
+	}
+	if g.thirdSpace(pl) {
+		g.say("%s: we are at peace with the %ss (no 3rd-space bombing in t-mode)",
+			p.Name, teamNames[pl.Owner])
 		return
 	}
 	p.Bombing = !p.Bombing
@@ -496,6 +519,8 @@ func (g *Game) Tick() {
 	g.tick++
 	// transient msgs/booms/phasers are cleared by broadcast() after sending, so
 	// events appended by Command() between ticks aren't lost
+
+	g.updateBots()
 
 	for _, p := range g.players {
 		if p == nil {
@@ -851,8 +876,8 @@ func (g *Game) planetFight() {
 			continue
 		}
 		pl := g.planets[p.Orbiting]
-		if pl.Owner == p.Team || pl.Armies < 5 {
-			continue // cannot bomb below 5 armies
+		if pl.Owner == p.Team || pl.Armies < 5 || g.thirdSpace(pl) {
+			continue // cannot bomb below 5 armies or 3rd space in t-mode
 		}
 		rnd := rand.Intn(100)
 		var ab int
@@ -874,6 +899,18 @@ func (g *Game) planetFight() {
 	}
 }
 
+// carryCapacity = trunc(kills to 0.01) * 2 (3 for AS); SB has no kills cap
+func carryCapacity(p *Player) int {
+	if p.Ship.Type == "SB" {
+		return p.Ship.MaxArmies
+	}
+	mult := 2.0
+	if p.Ship.Type == "AS" {
+		mult = 3.0
+	}
+	return min(p.Ship.MaxArmies, int(math.Floor(p.Kills*100)/100*mult))
+}
+
 // beam (daemon.c:3207), every 0.8 s: one army per pulse
 func (g *Game) beam() {
 	for _, p := range g.players {
@@ -882,16 +919,7 @@ func (g *Game) beam() {
 		}
 		pl := g.planets[p.Orbiting]
 		if p.Beaming == 1 { // up
-			// carry capacity = trunc(kills to 0.01) * 2 (3 for AS); SB has no kills cap
-			capacity := p.Ship.MaxArmies
-			if p.Ship.Type != "SB" {
-				mult := 2.0
-				if p.Ship.Type == "AS" {
-					mult = 3.0
-				}
-				capacity = min(capacity, int(math.Floor(p.Kills*100)/100*mult))
-			}
-			if pl.Owner != p.Team || pl.Armies < 5 || p.Armies >= capacity {
+			if pl.Owner != p.Team || pl.Armies < 5 || p.Armies >= carryCapacity(p) {
 				continue
 			}
 			p.Armies++

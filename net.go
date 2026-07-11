@@ -193,6 +193,20 @@ func (c *Client) readPump() {
 			c.send <- resp
 			continue
 		}
+		switch m.T {
+		case "addbot":
+			c.srv.game.AddBotCmd(m.Team)
+			continue
+		case "removebot":
+			c.srv.game.RemoveBotCmd(m.Team)
+			continue
+		case "balancebots":
+			c.srv.game.BalanceBots()
+			continue
+		case "clearbots":
+			c.srv.game.ClearBots()
+			continue
+		}
 		if c.player != nil {
 			if m.V < 0 {
 				m.V = 0

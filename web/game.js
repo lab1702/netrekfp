@@ -55,6 +55,27 @@ function refreshSel() {
   for (const b of teamsP.children) b.classList.toggle("sel", b.dataset.team === selTeam);
   for (const b of shipsP.children) b.classList.toggle("sel", b.dataset.ship === selShip);
 }
+const botsP = document.getElementById("bots");
+function buildBotUI() {
+  if (botsP.childElementCount) return;
+  const add = (label, msg, color) => {
+    const b = document.createElement("button");
+    b.textContent = label;
+    if (color) b.style.color = color;
+    b.onclick = () => send(msg);
+    botsP.appendChild(b);
+  };
+  const lbl = document.createElement("span");
+  lbl.textContent = "bots: ";
+  botsP.appendChild(lbl);
+  for (const tm of ["F", "R", "K", "O"])
+    add("+" + tm, { t: "addbot", team: tm }, TEAM_CSS[tm]);
+  for (const tm of ["F", "R", "K", "O"])
+    add("−" + tm, { t: "removebot", team: tm }, TEAM_CSS[tm]);
+  add("BALANCE", { t: "balancebots" });
+  add("CLEAR", { t: "clearbots" });
+}
+
 document.getElementById("go").onclick = tryJoin;
 nameInput.onkeydown = e => { if (e.key === "Enter") tryJoin(); e.stopPropagation(); };
 function tryJoin() {
@@ -405,5 +426,6 @@ function frame() {
 }
 
 buildJoinUI(null);
+buildBotUI();
 connect();
 requestAnimationFrame(frame);

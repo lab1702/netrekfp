@@ -51,9 +51,16 @@ its planets.
 
 **Caps:** 128 players total, 32 per team (FED/ROM/KLI/ORI), enforced at join.
 
+**Bots** (added later by request): AI ported from lab1702/netrek-web — per-bot cooldown state
+machine, threat assessment + torpedo dodging, quadratic lead-intercept aiming, sequential torp
+volleys (engine allows one torp/tick), target scoring with lock persistence, ally separation,
+repair/fuel trips, planet defense, cloak tactics, and the T-mode bomb/pickup/take loop. Bots
+count toward T-mode. The engine also gained Vanilla's t-mode third-space rule (no bombing teams
+nobody flies for), without which bots farm the empty empires. No SB bots (no docking yet).
+
 **Cut (not requested / add later):** plasma torps, tractors/pressors, starbase docking &
 refit/transwarp, observers, quadrant-conquer ending, surrender/coup timers, UDP protocol,
-per-client visibility culling, bots, persistence of any kind.
+per-client visibility culling, persistence of any kind.
 
 ## 3D view
 

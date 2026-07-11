@@ -16,6 +16,12 @@ go run .
 
 then open http://localhost:8080 (WebGL required). Up to 128 players, 32 per team.
 
+**Bots:** the join screen has bot controls — `+F/+R/+K/+O` add a bot to a team, `−` removes one,
+`BALANCE` tops up the two most-populated teams to 4v4 (T-mode-ready in one click), `CLEAR` removes
+all bots. Bot AI is modeled on [lab1702/netrek-web](https://github.com/lab1702/netrek-web): threat
+assessment, torpedo dodging, lead-aimed torps and spreads, target scoring, planet defense, and a
+full T-mode planet game (bomb, pick up, take). Bots count toward T-mode player counts.
+
 ## Rules
 
 Standard Bronco netrek at 10 Hz: SC/DD/CA/BB/AS/SB/GA ship classes, phasers with range falloff,
