@@ -286,6 +286,21 @@ func TestGenocideOfEmptyTeamIgnored(t *testing.T) {
 	}
 }
 
+func TestSpawnAtHomeworld(t *testing.T) {
+	g := NewGame()
+	for _, tc := range []struct {
+		team string
+		home int
+	}{{"F", 0}, {"R", 10}, {"K", 20}, {"O", 30}} {
+		p := addPlayer(t, g, "s", tc.team, "CA").player
+		hw := g.planets[tc.home]
+		if math.Abs(p.X-hw.X) > 5000 || math.Abs(p.Y-hw.Y) > 5000 {
+			t.Fatalf("%s spawn (%.0f,%.0f) not within 5000 of %s",
+				tc.team, p.X, p.Y, hw.Name)
+		}
+	}
+}
+
 func TestPlanetLockAutoOrbit(t *testing.T) {
 	g := NewGame()
 	p := addPlayer(t, g, "s", "F", "CA").player

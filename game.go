@@ -215,20 +215,10 @@ func (g *Game) Join(cl *Client, name string, teamL, shipT string) (*Player, stri
 	return p, ""
 }
 
-// spawn: enter.c — near a random team-owned planet, full health, shields up
+// spawn: enter.c + pl_pick_home_offset — at the team homeworld +-5000, even
+// if it has been captured (stock startplanets marks only the four homes)
 func (g *Game) spawn(p *Player) {
-	var home []*Planet
-	for _, pl := range g.planets {
-		if pl.Owner == p.Team {
-			home = append(home, pl)
-		}
-	}
-	var at *Planet
-	if len(home) > 0 {
-		at = home[rand.Intn(len(home))]
-	} else {
-		at = g.planets[13] // Regulus, the Vanilla fallback
-	}
+	at := g.planets[p.Team*10]
 	p.X = at.X + float64(rand.Intn(10000)-5000)
 	p.Y = at.Y + float64(rand.Intn(10000)-5000)
 	p.X = math.Max(0, math.Min(GWidth, p.X))
