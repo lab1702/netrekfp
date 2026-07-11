@@ -95,6 +95,8 @@ type Player struct {
 	ExplodeTicks int
 	LastTorpTick int64
 	WhoDead      int // killer id for explosion chain credit (daemon.c blowup), -1
+	SelfDest     int64 // tick the armed self-destruct fires at; 0 = disarmed
+	SelfKill     bool  // died by self-destruct: KQUIT blowup spares teammates
 
 	Bot *botState // non-nil for AI players
 
@@ -114,6 +116,9 @@ type Game struct {
 
 	popOrder []int
 	popIdx   int
+
+	clientsOnline int // humans connected (set by broadcast); bots scuttle at 0
+	botsScuttling bool
 
 	// per-tick transient output
 	msgs    []string
@@ -249,6 +254,8 @@ func (g *Game) spawn(p *Player) {
 	p.ExplodeTicks = 0
 	p.LastTorpTick = -1
 	p.WhoDead = -1
+	p.SelfDest = 0
+	p.SelfKill = false
 	p.Status = "alive"
 }
 
@@ -281,6 +288,12 @@ func (g *Game) Command(p *Player, cmd string, dir float64, val int) {
 			p.Team = TeamNone
 		}
 		return
+	}
+	// any action while the fuse burns disarms it (socket.c:1081); a fresh
+	// selfdestruct command below then re-arms with a full countdown
+	if p.SelfDest != 0 {
+		p.SelfDest = 0
+		g.say("%s: self destruct has been canceled", p.Name)
 	}
 	switch cmd {
 	case "course":
@@ -321,6 +334,14 @@ func (g *Game) Command(p *Player, cmd string, dir float64, val int) {
 		p.Cloaked = !p.Cloaked
 	case "det":
 		g.detEnemyTorps(p)
+	case "selfdestruct":
+		// 10 s fuse, 60 s for a starbase (socket.c:1726)
+		fuse := int64(100)
+		if p.Ship.Type == "SB" {
+			fuse = 600
+		}
+		p.SelfDest = g.tick + fuse
+		g.say("%s: self destruct initiated", p.Name)
 	case "quit":
 		p.Status = "dead"
 		p.Team = TeamNone
@@ -528,6 +549,10 @@ func (g *Game) Tick() {
 		}
 		switch p.Status {
 		case "alive":
+			g.checkSelfDestruct(p)
+			if p.Status != "alive" {
+				continue
+			}
 			g.movePlayer(p)
 			g.housekeepPlayer(p)
 		case "explode":
@@ -827,6 +852,29 @@ func (g *Game) explodeTorp(t *Torp) {
 	}
 }
 
+// udplayers_palive_self_destruct (daemon.c:1750): the fuse fires at zero, or
+// immediately when the ship is pristine and unthreatened (green alert)
+func (g *Game) checkSelfDestruct(p *Player) {
+	if p.SelfDest == 0 {
+		return
+	}
+	green := p.Damage == 0 && p.Shield == p.Ship.MaxShield
+	if green {
+		for _, e := range g.players {
+			if e != nil && e.Status == "alive" && e.Team != p.Team &&
+				math.Hypot(e.X-p.X, e.Y-p.Y) < 15000 {
+				green = false
+				break
+			}
+		}
+	}
+	if g.tick >= p.SelfDest || green {
+		p.SelfDest = 0
+		p.SelfKill = true
+		g.kill(p, -1, "self destruct")
+	}
+}
+
 // ship explosion splash (blowup, daemon.c:3549)
 func (g *Game) blowup(v *Player) {
 	g.booms = append(g.booms, Boom{v.X, v.Y, true})
@@ -840,6 +888,9 @@ func (g *Game) blowup(v *Player) {
 	for _, p := range g.players {
 		if p == nil || p == v || p.Status != "alive" {
 			continue
+		}
+		if v.SelfKill && p.Team == v.Team {
+			continue // KQUIT explosions spare teammates (daemon.c:3566)
 		}
 		dist := math.Hypot(p.X-v.X, p.Y-v.Y)
 		if dist > ShipDamAge {

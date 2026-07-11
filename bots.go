@@ -213,12 +213,17 @@ func (g *Game) ClearBots() {
 
 // updateBots runs every tick from Tick() with g.mu held.
 func (g *Game) updateBots() {
+	g.checkBotScuttle()
 	for _, p := range g.players {
 		if p == nil || p.Bot == nil {
 			continue
 		}
 		switch p.Status {
 		case "dead":
+			if g.botsScuttling { // empty server: free the slot instead
+				g.players[p.ID] = nil
+				continue
+			}
 			p.Bot.RespawnDelay++
 			if p.Bot.RespawnDelay > 30 { // ~3s, like a quick human re-outfit
 				*p.Bot = *newBotState()
@@ -226,6 +231,36 @@ func (g *Game) updateBots() {
 			}
 		case "alive":
 			g.updateBot(p)
+		}
+	}
+}
+
+// checkBotScuttle: when the last human connection drops, every bot arms its
+// self-destruct; a human returning within the fuse cancels the scuttle.
+func (g *Game) checkBotScuttle() {
+	if g.clientsOnline == 0 && !g.botsScuttling {
+		armed := false
+		for _, p := range g.players {
+			if p != nil && p.Bot != nil && p.Status == "alive" {
+				p.SelfDest = g.tick + 100
+				armed = true
+			}
+		}
+		if armed {
+			g.botsScuttling = true
+			g.say("No humans left — bots self destructing.")
+		}
+	} else if g.clientsOnline > 0 && g.botsScuttling {
+		g.botsScuttling = false
+		saved := false
+		for _, p := range g.players {
+			if p != nil && p.Bot != nil {
+				p.SelfDest = 0
+				saved = true
+			}
+		}
+		if saved {
+			g.say("Human back online — bot self destruct canceled.")
 		}
 	}
 }

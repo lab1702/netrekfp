@@ -105,6 +105,7 @@ type wireYou struct {
 	Cl    bool    `json:"cl"`
 	Rep   bool    `json:"rep"`
 	Bmb   bool    `json:"bmb"`
+	Sd    int     `json:"sd"` // self-destruct countdown, seconds; 0 = disarmed
 	St    string  `json:"st"`
 	Tm    string  `json:"tm"`
 }
@@ -279,6 +280,7 @@ func (s *Server) broadcast() {
 	// sends happen under s.mu so a disconnecting client can't close its channel
 	// mid-fanout; the sends are non-blocking so holding the lock is safe
 	s.mu.Lock()
+	g.clientsOnline = len(s.clients)
 	for c := range s.clients {
 		p := c.player
 		if p == nil {
@@ -292,6 +294,9 @@ func (s *Server) broadcast() {
 			Et: p.ETemp, MaxEt: p.Ship.MaxEgnTemp, Tp: p.NTorps, Ar: p.Armies,
 			Ki: p.Kills, Orb: p.Orbiting, ShUp: p.ShieldsUp, Cl: p.Cloaked,
 			Rep: p.RepairMode, Bmb: p.Bombing, St: p.Status, Tm: teamLetter(p.Team),
+		}
+		if p.SelfDest != 0 {
+			mine.You.Sd = int(p.SelfDest-g.tick+9) / 10
 		}
 		vis := make([]wirePlayer, 0, len(players))
 		for _, wp := range players {

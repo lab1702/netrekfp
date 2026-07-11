@@ -222,6 +222,7 @@ addEventListener("keydown", e => {
     case "d": send({ t: "det" }); break;
     case "m": mapOn = !mapOn; mapCanvas.style.display = mapOn ? "block" : "none"; break;
     case "\\": toggleBotPanel(); break;
+    case "Q": send({ t: "selfdestruct" }); break;
     case "Escape":
       if (botPanel.style.display === "block") { toggleBotPanel(false); break; }
       send({ t: "quit" });
@@ -285,6 +286,8 @@ function updateHUD(you, players) {
 
   let top = curSnap.tmode.on
     ? `T-MODE &nbsp; ${fmtTime(curSnap.tmode.left)}` : "pickup (need 4v4 for T-mode)";
+  if (you.sd > 0)
+    top = `<span style="color:#ef5350;font-weight:bold">SELF DESTRUCT IN ${you.sd}</span><br>` + top;
   if (you.orb >= 0) {
     const pl = planets[you.orb];
     const fl = (pl.f & 8 ? "HOME " : "") + (pl.f & 1 ? "REPAIR " : "") +

@@ -69,6 +69,7 @@ persists.
 | `R` | repair mode |
 | `m` | galactic map |
 | `\` | bot management panel |
+| `Q` | self destruct (10 s fuse; any other action cancels) |
 | Esc | quit ship (or close bot panel) |
 
 You need kills to carry armies (2 per kill, 3 per kill in an Assault ship).
