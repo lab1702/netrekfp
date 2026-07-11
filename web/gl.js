@@ -52,11 +52,15 @@ void main() { vec4 w = uModel * vec4(aPos, 1.0);
 const MESH_FS = `
 precision mediump float;
 uniform vec4 uColor; uniform vec3 uLight; uniform float uEmissive;
+uniform vec3 uEye; uniform float uSpec;
 uniform vec3 uBoomPos[4]; uniform vec4 uBoomCol[4]; // rgb premultiplied, w = radius
 varying vec3 vNorm; varying vec3 vWorld;
 void main() {
   vec3 n = normalize(vNorm);
   vec3 c = uColor.rgb * (0.30 + 0.75 * max(dot(n, uLight), 0.0));
+  // Blinn-Phong sun glint: white, view-dependent, strength per object type
+  vec3 h = normalize(uLight + normalize(uEye - vWorld));
+  c += uSpec * pow(max(dot(n, h), 0.0), 32.0);
   for (int i = 0; i < 4; i++) {
     vec3 dv = uBoomPos[i] - vWorld;
     float dist = max(length(dv), 1.0);
@@ -152,6 +156,8 @@ function Renderer(canvas) {
             uColor: gl.getUniformLocation(this.meshProg, "uColor"),
             uLight: gl.getUniformLocation(this.meshProg, "uLight"),
             uEmissive: gl.getUniformLocation(this.meshProg, "uEmissive"),
+            uEye: gl.getUniformLocation(this.meshProg, "uEye"),
+            uSpec: gl.getUniformLocation(this.meshProg, "uSpec"),
             // uniform arrays must be looked up via their first element
             uBoomPos: gl.getUniformLocation(this.meshProg, "uBoomPos[0]"),
             uBoomCol: gl.getUniformLocation(this.meshProg, "uBoomCol[0]") },
@@ -237,6 +243,7 @@ Renderer.prototype.begin = function (cx, cy, yaw, boomLights) {
   gl.useProgram(this.meshProg);
   gl.uniform3fv(this.loc.mesh.uBoomPos, pos);
   gl.uniform4fv(this.loc.mesh.uBoomCol, col);
+  gl.uniform3fv(this.loc.mesh.uEye, this.eye);
 
   this.drawStars();
 };
@@ -269,7 +276,7 @@ Renderer.prototype.drawStars = function () {
   gl.depthMask(true);
 };
 
-Renderer.prototype.drawMesh = function (buf, count, indexed, model, color, emissive) {
+Renderer.prototype.drawMesh = function (buf, count, indexed, model, color, emissive, spec) {
   const gl = this.gl, L = this.loc.mesh;
   gl.useProgram(this.meshProg);
   gl.uniformMatrix4fv(L.uPV, false, this.pv);
@@ -277,6 +284,7 @@ Renderer.prototype.drawMesh = function (buf, count, indexed, model, color, emiss
   gl.uniform4fv(L.uColor, color);
   gl.uniform3f(L.uLight, 0.45, 0.72, -0.53);
   gl.uniform1f(L.uEmissive, emissive || 0);
+  gl.uniform1f(L.uSpec, spec || 0);
   gl.bindBuffer(gl.ARRAY_BUFFER, buf);
   gl.enableVertexAttribArray(L.aPos);
   gl.enableVertexAttribArray(L.aNorm);
@@ -304,7 +312,7 @@ Renderer.prototype.drawPlanet = function (px, py, team, dist) {
     const spin = 0; // planets don't need to spin; sphere is uniform
     this.drawMesh(this.sphereBuf, this.sphereCount, true,
                   mat4Model(px, 0, py, spin, PLANET_RADIUS),
-                  [color[0], color[1], color[2], alpha]);
+                  [color[0], color[1], color[2], alpha], 0, 0.1);
   }
   return alpha;
 };
@@ -320,7 +328,7 @@ Renderer.prototype.drawShip = function (px, py, yaw, team, dist, dim) {
   } else {
     this.drawMesh(this.shipBuf, this.shipCount, false,
                   mat4Model(px, 0, py, yaw, SHIP_SCALE),
-                  [color[0], color[1], color[2], alpha]);
+                  [color[0], color[1], color[2], alpha], 0, 0.6);
   }
   return alpha;
 };
