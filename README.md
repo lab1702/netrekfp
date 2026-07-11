@@ -56,6 +56,7 @@ persists.
 | `d` | det enemy torps |
 | `R` | repair mode |
 | `m` | galactic map |
-| Esc | quit ship |
+| `\` | bot management panel |
+| Esc | quit ship (or close bot panel) |
 
 You need kills to carry armies (2 per kill, 3 per kill in an Assault ship).
