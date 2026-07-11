@@ -43,11 +43,17 @@ torps, ship explosion splash damage, kill credit, respawn at home area.
 **T-mode:** starts when ≥2 teams each have ≥4 players; runs 30 minutes or until fewer than 2
 teams have 4+; on end, stats discarded and galaxy reset to the virginal layout.
 
+**Genocide:** taking the last planet of a team that has players wipes that team (all its ships
+explode, per Vanilla checkgen) and ends the round immediately — announcement, stats discarded,
+galaxy reset. Deviation from Vanilla: stock netrek plays on toward quadrant conquer (VICTORY=3);
+here genocide of a populated team is itself the ending. Wiping a playerless team just neutralizes
+its planets.
+
 **Caps:** 128 players total, 32 per team (FED/ROM/KLI/ORI), enforced at join.
 
 **Cut (not requested / add later):** plasma torps, tractors/pressors, starbase docking &
-refit/transwarp, observers, genocide ending, UDP protocol, per-client visibility culling,
-bots, persistence of any kind.
+refit/transwarp, observers, quadrant-conquer ending, surrender/coup timers, UDP protocol,
+per-client visibility culling, bots, persistence of any kind.
 
 ## 3D view
 

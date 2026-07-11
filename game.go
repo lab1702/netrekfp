@@ -909,8 +909,12 @@ func (g *Game) beam() {
 				pl.Armies--
 				p.Kills += 0.02
 				if pl.Armies == 0 {
+					loser := pl.Owner
 					pl.Owner = TeamNone
 					g.say("%s destroyed by %s (%s)", pl.Name, p.Name, teamLetter(p.Team))
+					if g.checkGenocide(loser, p) {
+						return // round over; planet list was rebuilt
+					}
 				}
 			default: // independent planet: first army takes it
 				p.Armies--
@@ -982,8 +986,15 @@ func (g *Game) checkTmode() {
 }
 
 func (g *Game) endTmode(reason string) {
+	g.say("T-mode over (%s).", reason)
+	g.endRound()
+}
+
+// endRound discards stats and rebuilds the galaxy; t-mode restarts on the
+// next check if the player counts still qualify
+func (g *Game) endRound() {
 	g.tmode = false
-	g.say("T-mode over (%s). Stats discarded, galaxy reset.", reason)
+	g.say("Stats discarded, galaxy reset.")
 	g.planets = resetPlanets()
 	for _, p := range g.players {
 		if p != nil {
@@ -991,4 +1002,37 @@ func (g *Game) endTmode(reason string) {
 			p.Armies = 0
 		}
 	}
+}
+
+// checkgen (daemon.c:3776): a team that loses its last planet is genocided —
+// every ship it has flying is destroyed. Vanilla then plays on toward the
+// quadrant-conquer win; here a genocide of a populated team ends the round.
+func (g *Game) checkGenocide(loser int, winner *Player) bool {
+	if loser < 0 {
+		return false
+	}
+	for _, pl := range g.planets {
+		if pl.Owner == loser {
+			return false
+		}
+	}
+	populated := false
+	for _, p := range g.players {
+		if p != nil && p.Team == loser {
+			populated = true
+			break
+		}
+	}
+	if !populated {
+		return false // nobody flies for this empire; not a game ending
+	}
+	g.say("GENOCIDE! The %s empire has been wiped out by the %ss (%s).",
+		teamNames[loser], teamNames[winner.Team], winner.Name)
+	for _, p := range g.players {
+		if p != nil && p.Team == loser && p.Status == "alive" {
+			g.kill(p, -1, "genocide")
+		}
+	}
+	g.endRound()
+	return true
 }

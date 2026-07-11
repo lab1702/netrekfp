@@ -14,6 +14,7 @@ const (
 )
 
 var teamLetters = [4]string{"F", "R", "K", "O"}
+var teamNames = [4]string{"Federation", "Romulan", "Klingon", "Orion"}
 
 const (
 	PlRepair = 1 << iota

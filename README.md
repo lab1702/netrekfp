@@ -23,7 +23,9 @@ max 8 torps with proximity fuses, shields, weapon/engine overheat, repair mode, 
 planets, orbit-bomb-beam army play, planet capture (enemy → independent → yours), cloak, det.
 
 **T-mode** starts when ≥2 teams each have ≥4 players and runs 30 minutes, or until fewer than
-2 teams have 4+. When it ends, stats are discarded and the galaxy resets. No database, nothing
+2 teams have 4+. **Genocide** ends the round early: take a populated team's last planet and its
+remaining ships are destroyed, the win is announced, and the galaxy resets (T-mode restarts if
+enough players remain). Either way, stats are discarded when a round ends. No database, nothing
 persists.
 
 ## Controls

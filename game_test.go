@@ -209,6 +209,83 @@ func TestDetterTakesDamageTeamSafe(t *testing.T) {
 	}
 }
 
+func TestGenocideEndsRound(t *testing.T) {
+	g := NewGame()
+	var feds []*Player
+	var roms []*Player
+	for i := 0; i < 4; i++ {
+		feds = append(feds, addPlayer(t, g, "f", "F", "CA").player)
+		roms = append(roms, addPlayer(t, g, "r", "R", "CA").player)
+	}
+	g.checkTmode()
+	if !g.tmode {
+		t.Fatal("tmode should be on at 4v4")
+	}
+
+	// Rom empire down to one planet with one army
+	for _, pl := range g.planets {
+		if pl.Owner == TeamRom {
+			pl.Owner = TeamFed
+		}
+	}
+	rom := g.planets[10] // Romulus
+	rom.Owner, rom.Armies = TeamRom, 1
+
+	taker := feds[0]
+	taker.X, taker.Y = rom.X+OrbDist, rom.Y
+	taker.Speed = 0
+	taker.Armies = 1
+	g.enterOrbit(taker)
+	taker.Beaming = 2
+	g.beam() // kills the last Rom army -> genocide
+
+	if g.tmode {
+		t.Fatal("genocide should end the round")
+	}
+	for _, r := range roms {
+		if r.Status != "explode" {
+			t.Fatalf("genocided team's ships should explode, got %s", r.Status)
+		}
+	}
+	if g.planets[10].Owner != TeamRom || g.planets[10].Armies != topArmies {
+		t.Fatal("galaxy should reset after genocide")
+	}
+	found := false
+	for _, m := range g.msgs {
+		if len(m) >= 9 && m[:9] == "GENOCIDE!" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected genocide announcement, got %v", g.msgs)
+	}
+}
+
+func TestGenocideOfEmptyTeamIgnored(t *testing.T) {
+	g := NewGame()
+	p := addPlayer(t, g, "f", "F", "CA").player
+	// Kli empire (no players) down to one planet with one army
+	for _, pl := range g.planets {
+		if pl.Owner == TeamKli {
+			pl.Owner = TeamFed
+		}
+	}
+	kli := g.planets[20] // Klingus
+	kli.Owner, kli.Armies = TeamKli, 1
+	p.X, p.Y = kli.X+OrbDist, kli.Y
+	p.Speed = 0
+	p.Armies = 1
+	g.enterOrbit(p)
+	p.Beaming = 2
+	g.beam()
+	if kli.Owner != TeamNone {
+		t.Fatal("planet should go independent")
+	}
+	if g.planets[20].Armies == topArmies {
+		t.Fatal("wiping an empire nobody plays for must not reset the galaxy")
+	}
+}
+
 func TestTurnRateSlowsWithSpeed(t *testing.T) {
 	g := NewGame()
 	p := addPlayer(t, g, "s", "F", "CA").player
