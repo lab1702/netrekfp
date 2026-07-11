@@ -540,7 +540,16 @@ function frame() {
   const torps = interpList(curSnap.torps, prevSnap && prevSnap.torps, f);
   const now = performance.now();
 
-  R.begin(you.x, you.y, you.d);
+  // explosions emit light: nearest four active booms become point lights
+  booms = booms.filter(b => now - b.at < 700);
+  const lights = booms.map(b => {
+    const age = (now - b.at) / 700;
+    return { x: b.x, y: b.y, r: b.big ? 6000 : 2500,
+             i: (1 - age) * (b.big ? 1.8 : 1.0),
+             d2: (b.x - you.x) ** 2 + (b.y - you.y) ** 2 };
+  }).sort((a, b) => a.d2 - b.d2);
+
+  R.begin(you.x, you.y, you.d, lights);
   const labels = [];
 
   for (const pl of planets) {
@@ -569,7 +578,6 @@ function frame() {
   phaserFx = phaserFx.filter(ph => ph.until > now);
   for (const ph of phaserFx)
     R.drawPhaser(ph.fx, ph.fy, ph.tx, ph.ty, ph.tm, (ph.until - now) / 300);
-  booms = booms.filter(b => now - b.at < 700);
   for (const b of booms)
     R.drawExplosion(b.x, b.y, (now - b.at) / 700);
   R.finish();

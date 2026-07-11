@@ -45,13 +45,26 @@ function mat4Model(x, y, z, yaw, s) {
 // ---------- shaders ----------
 const MESH_VS = `
 attribute vec3 aPos; attribute vec3 aNorm;
-uniform mat4 uPV, uModel; varying vec3 vNorm;
-void main() { gl_Position = uPV * uModel * vec4(aPos, 1.0);
+uniform mat4 uPV, uModel; varying vec3 vNorm; varying vec3 vWorld;
+void main() { vec4 w = uModel * vec4(aPos, 1.0);
+  gl_Position = uPV * w; vWorld = w.xyz;
   vNorm = mat3(uModel[0].xyz, uModel[1].xyz, uModel[2].xyz) * aNorm; }`;
 const MESH_FS = `
-precision mediump float; uniform vec4 uColor; uniform vec3 uLight; varying vec3 vNorm;
-void main() { float d = max(dot(normalize(vNorm), uLight), 0.0);
-  gl_FragColor = vec4(uColor.rgb * (0.30 + 0.75 * d), uColor.a); }`;
+precision mediump float;
+uniform vec4 uColor; uniform vec3 uLight; uniform float uEmissive;
+uniform vec3 uBoomPos[4]; uniform vec4 uBoomCol[4]; // rgb premultiplied, w = radius
+varying vec3 vNorm; varying vec3 vWorld;
+void main() {
+  vec3 n = normalize(vNorm);
+  vec3 c = uColor.rgb * (0.30 + 0.75 * max(dot(n, uLight), 0.0));
+  for (int i = 0; i < 4; i++) {
+    vec3 dv = uBoomPos[i] - vWorld;
+    float dist = max(length(dv), 1.0);
+    float att = max(1.0 - dist / max(uBoomCol[i].w, 1.0), 0.0);
+    c += uColor.rgb * uBoomCol[i].rgb * max(dot(n, dv / dist), 0.0) * att * att;
+  }
+  gl_FragColor = vec4(mix(c, uColor.rgb, uEmissive), uColor.a);
+}`;
 const POINT_VS = `
 attribute vec3 aPos; attribute vec4 aColor; attribute float aSize;
 uniform mat4 uPV; varying vec4 vColor;
@@ -137,7 +150,11 @@ function Renderer(canvas) {
             uPV: gl.getUniformLocation(this.meshProg, "uPV"),
             uModel: gl.getUniformLocation(this.meshProg, "uModel"),
             uColor: gl.getUniformLocation(this.meshProg, "uColor"),
-            uLight: gl.getUniformLocation(this.meshProg, "uLight") },
+            uLight: gl.getUniformLocation(this.meshProg, "uLight"),
+            uEmissive: gl.getUniformLocation(this.meshProg, "uEmissive"),
+            // uniform arrays must be looked up via their first element
+            uBoomPos: gl.getUniformLocation(this.meshProg, "uBoomPos[0]"),
+            uBoomCol: gl.getUniformLocation(this.meshProg, "uBoomCol[0]") },
     point: { aPos: gl.getAttribLocation(this.pointProg, "aPos"),
              aColor: gl.getAttribLocation(this.pointProg, "aColor"),
              aSize: gl.getAttribLocation(this.pointProg, "aSize"),
@@ -196,7 +213,8 @@ Renderer.prototype.resize = function () {
 };
 
 // camera: netrek pos (x, y), yaw = dir (radians, velocity (cos, sin) in netrek coords)
-Renderer.prototype.begin = function (cx, cy, yaw) {
+// boomLights: up to 4 explosion point lights [{x, y, i(ntensity), r(adius)}]
+Renderer.prototype.begin = function (cx, cy, yaw, boomLights) {
   const gl = this.gl;
   this.resize();
   this.aspect = this.canvas.width / this.canvas.height;
@@ -208,6 +226,18 @@ Renderer.prototype.begin = function (cx, cy, yaw) {
   gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
   this.points = [];   // accumulated point sprites: x,y,z, r,g,b,a, size
   this.lines = [];    // accumulated lines: x,y,z, r,g,b,a per vertex
+
+  // upload explosion lights once per frame (unused slots have radius 0)
+  const pos = new Float32Array(12), col = new Float32Array(16);
+  (boomLights || []).slice(0, 4).forEach((b, i) => {
+    pos[i * 3] = b.x; pos[i * 3 + 1] = 0; pos[i * 3 + 2] = b.y;
+    col[i * 4] = 1.0 * b.i; col[i * 4 + 1] = 0.6 * b.i; col[i * 4 + 2] = 0.3 * b.i;
+    col[i * 4 + 3] = b.r;
+  });
+  gl.useProgram(this.meshProg);
+  gl.uniform3fv(this.loc.mesh.uBoomPos, pos);
+  gl.uniform4fv(this.loc.mesh.uBoomCol, col);
+
   this.drawStars();
 };
 
@@ -239,13 +269,14 @@ Renderer.prototype.drawStars = function () {
   gl.depthMask(true);
 };
 
-Renderer.prototype.drawMesh = function (buf, count, indexed, model, color) {
+Renderer.prototype.drawMesh = function (buf, count, indexed, model, color, emissive) {
   const gl = this.gl, L = this.loc.mesh;
   gl.useProgram(this.meshProg);
   gl.uniformMatrix4fv(L.uPV, false, this.pv);
   gl.uniformMatrix4fv(L.uModel, false, model);
   gl.uniform4fv(L.uColor, color);
   gl.uniform3f(L.uLight, 0.45, 0.72, -0.53);
+  gl.uniform1f(L.uEmissive, emissive || 0);
   gl.bindBuffer(gl.ARRAY_BUFFER, buf);
   gl.enableVertexAttribArray(L.aPos);
   gl.enableVertexAttribArray(L.aNorm);
@@ -306,7 +337,7 @@ Renderer.prototype.drawExplosion = function (px, py, age) { // age 0..1
   const r = 100 + age * 900;
   this.gl.depthMask(false); // translucent shell must not occlude torps/beams
   this.drawMesh(this.sphereBuf, this.sphereCount, true,
-                mat4Model(px, 0, py, 0, r), [1, .6, .15, (1 - age) * .8]);
+                mat4Model(px, 0, py, 0, r), [1, .6, .15, (1 - age) * .8], 1);
   this.gl.depthMask(true);
 };
 
