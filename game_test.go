@@ -286,6 +286,42 @@ func TestGenocideOfEmptyTeamIgnored(t *testing.T) {
 	}
 }
 
+func TestPlanetLockAutoOrbit(t *testing.T) {
+	g := NewGame()
+	p := addPlayer(t, g, "s", "F", "CA").player
+	p.X, p.Y = 50000, 50000
+	p.Dir, p.DesDir = math.Pi, math.Pi // facing the wrong way
+	target := 13                       // Regulus (42000, 44000), ~10k away
+
+	g.Command(p, "lock", 0, target)
+	if p.LockPlanet != target {
+		t.Fatal("lock should be set")
+	}
+	if p.DesSpeed != p.Ship.MaxSpeed {
+		t.Fatal("locking while parked should throttle up")
+	}
+	for i := 0; i < 400 && p.Orbiting != target; i++ {
+		g.Tick()
+	}
+	if p.Orbiting != target {
+		t.Fatalf("autopilot should end in orbit, at (%.0f,%.0f) speed %d",
+			p.X, p.Y, p.Speed)
+	}
+	if p.LockPlanet != -1 {
+		t.Fatal("lock should clear on orbit entry")
+	}
+
+	// manual course breaks a lock
+	g.Command(p, "lock", 0, 0)
+	if p.LockPlanet != 0 || p.Orbiting != -1 {
+		t.Fatal("re-lock should break orbit and set the new target")
+	}
+	g.Command(p, "course", 1.0, 0)
+	if p.LockPlanet != -1 {
+		t.Fatal("manual course should clear the lock")
+	}
+}
+
 func TestTurnRateSlowsWithSpeed(t *testing.T) {
 	g := NewGame()
 	p := addPlayer(t, g, "s", "F", "CA").player

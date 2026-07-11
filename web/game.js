@@ -197,9 +197,19 @@ addEventListener("mousedown", e => {
   const you = interpYou();
   const d = bearingFromScreen(e.clientX, e.clientY, you);
   if (mapOn) {
-    // clicking the galactic map sets course toward that galaxy point
+    // right-click: course toward that point; left-click a planet: lock on
     const g = mapToGalaxy(e.clientX, e.clientY);
-    if (g && e.button === 2) send({ t: "course", d: Math.atan2(g[1] - you.y, g[0] - you.x) });
+    if (!g) return;
+    if (e.button === 2) {
+      send({ t: "course", d: Math.atan2(g[1] - you.y, g[0] - you.x) });
+    } else if (e.button === 0) {
+      let best = -1, bd = 3000; // galaxy units of click slop
+      for (const pl of planets) {
+        const d = Math.hypot(pl.x - g[0], pl.y - g[1]);
+        if (d < bd) { bd = d; best = pl.n; }
+      }
+      if (best >= 0) send({ t: "lock", v: best });
+    }
     return;
   }
   if (e.button === 0) send({ t: "torp", d });
@@ -223,6 +233,20 @@ addEventListener("keydown", e => {
     case "R": send({ t: "repair" }); break;
     case "c": send({ t: "cloak" }); break;
     case "d": send({ t: "det" }); break;
+    case "l": { // lock onto the planet under the reticle
+      if (!curSnap) break;
+      const y2 = interpYou();
+      let best = -1, bd = 80; // screen px
+      for (const pl of planets) {
+        if (Math.hypot(pl.x - y2.x, pl.y - y2.y) > 30000) continue;
+        const s = R.project(pl.x, 0, pl.y);
+        if (!s) continue;
+        const d = Math.hypot(s[0] - mouse.x, s[1] - mouse.y);
+        if (d < bd) { bd = d; best = pl.n; }
+      }
+      if (best >= 0) send({ t: "lock", v: best });
+      break;
+    }
     case "m": mapOn = !mapOn; mapCanvas.style.display = mapOn ? "block" : "none"; break;
     case "\\": toggleBotPanel(); break;
     case "Q": send({ t: "selfdestruct" }); break;
@@ -289,6 +313,8 @@ function updateHUD(you, players) {
 
   let top = curSnap.tmode.on
     ? `T-MODE &nbsp; ${fmtTime(curSnap.tmode.left)}` : "pickup (need 4v4 for T-mode)";
+  if (you.lk >= 0)
+    top += `<br><span style="color:var(--amber)">LOCKED &rarr; ${planets[you.lk].name}</span>`;
   if (you.sd > 0)
     top = `<span style="color:var(--danger);font-weight:bold">SELF DESTRUCT IN ${you.sd}</span><br>` + top;
   if (you.orb >= 0) {
@@ -353,6 +379,10 @@ function drawMap(you, players) {
     const x = ox + pl.x / GWIDTH * sz, y = oy + pl.y / GWIDTH * sz;
     ctx.fillStyle = TEAM_CSS[pl.o] || TEAM_CSS.I;
     ctx.beginPath(); ctx.arc(x, y, 3.5, 0, 7); ctx.fill();
+    if (curSnap.you.lk === pl.n) { // lock ring
+      ctx.strokeStyle = "#ffb74d";
+      ctx.beginPath(); ctx.arc(x, y, 8, 0, 7); ctx.stroke();
+    }
     ctx.fillText(`${pl.name.split(" ")[0]} ${pl.a}`, x, y + 14);
     if (pl.f & 4) { ctx.fillStyle = "#8d6e63"; ctx.fillText("agri", x, y + 25); }
   }

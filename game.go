@@ -97,6 +97,7 @@ type Player struct {
 	WhoDead      int // killer id for explosion chain credit (daemon.c blowup), -1
 	SelfDest     int64 // tick the armed self-destruct fires at; 0 = disarmed
 	SelfKill     bool  // died by self-destruct: KQUIT blowup spares teammates
+	LockPlanet   int   // planet lock (PFPLLOCK): auto-steer + auto-orbit; -1 off
 
 	Bot *botState // non-nil for AI players
 
@@ -256,6 +257,7 @@ func (g *Game) spawn(p *Player) {
 	p.WhoDead = -1
 	p.SelfDest = 0
 	p.SelfKill = false
+	p.LockPlanet = -1
 	p.Status = "alive"
 }
 
@@ -299,11 +301,25 @@ func (g *Game) Command(p *Player, cmd string, dir float64, val int) {
 	case "course":
 		p.DesDir = dir
 		p.RepairMode = false
+		p.LockPlanet = -1 // manual course overrides the lock
 		g.breakOrbit(p)
 	case "speed":
 		p.DesSpeed = min(val, p.Ship.MaxSpeed)
 		p.RepairMode = false
 		g.breakOrbit(p)
+	case "lock":
+		if val < 0 || val >= len(g.planets) {
+			return
+		}
+		p.LockPlanet = val
+		p.Bombing = false
+		p.Beaming = 0
+		p.RepairMode = false
+		g.breakOrbit(p)
+		if p.DesSpeed == 0 { // ponytail: Vanilla makes you throttle yourself
+			p.DesSpeed = p.Ship.MaxSpeed
+		}
+		g.say("%s: locking onto %s", p.Name, g.planets[val].Name)
 	case "shields":
 		p.ShieldsUp = !p.ShieldsUp
 		p.RepairMode = false
@@ -440,6 +456,7 @@ func (g *Game) enterOrbit(p *Player) {
 			p.Dir, p.DesDir = ang+math.Pi/2, ang+math.Pi/2
 			p.Speed, p.DesSpeed = 0, 0
 			p.Orbiting = pl.N
+			p.LockPlanet = -1 // orbit.c:28
 			return
 		}
 	}
@@ -588,6 +605,23 @@ func (g *Game) Tick() {
 
 func (g *Game) movePlayer(p *Player) {
 	s := p.Ship
+
+	// planet lock (redraw.c:581): steer at it every tick, slow to warp 2 at
+	// braking distance, orbit automatically on arrival
+	if p.LockPlanet >= 0 && p.Orbiting < 0 {
+		pl := g.planets[p.LockPlanet]
+		dist := math.Hypot(pl.X-p.X, pl.Y-p.Y)
+		if dist-OrbDist/2 < 11500*float64(p.Speed*p.Speed)/float64(s.DecInt) &&
+			p.DesSpeed > 2 {
+			p.DesSpeed = 2
+		}
+		if dist < EntOrbDist && p.Speed <= OrbSpeed {
+			p.LockPlanet = -1
+			g.enterOrbit(p)
+		} else {
+			p.DesDir = math.Atan2(pl.Y-p.Y, pl.X-p.X)
+		}
+	}
 
 	// desired-speed clamps: damage cripple, engine lockout, fuel starvation (daemon.c:1185-1208)
 	// crippled max: C truncates the float expression, i.e. ceiling of the subtrahend

@@ -66,6 +66,7 @@ team colors and all in-game rendering are historical and deliberately outside th
 | `0`–`9`, `=` | warp speed (= is max) |
 | `s` | shields |
 | `o` | orbit (warp ≤ 2, near planet) |
+| `l` / left-click map planet | lock on: autopilot flies there and orbits on arrival |
 | `b` | bomb (orbiting enemy planet) |
 | `z` / `x` | beam armies up / down |
 | `c` | cloak |
