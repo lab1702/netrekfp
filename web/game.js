@@ -251,7 +251,10 @@ addEventListener("keydown", e => {
   if (!joined) return;
   if (e.key >= "0" && e.key <= "9") { send({ t: "speed", v: +e.key }); return; }
   const you = curSnap ? interpYou() : null;
-  switch (e.key) {
+  // some input paths deliver shift+letter as the lowercase key with the
+  // shift modifier set; derive the logical key instead of trusting e.key
+  const key = e.shiftKey && e.key.length === 1 ? e.key.toUpperCase() : e.key;
+  switch (key) {
     case "=": send({ t: "speed", v: 99 }); break; // server clamps to maxspeed
     case "s": send({ t: "shields" }); break;
     case "t": if (you) send({ t: "torp", d: bearingFromScreen(mouse.x, mouse.y, you) }); break;
