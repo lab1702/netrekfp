@@ -275,11 +275,18 @@ function mapToGalaxy(sx, sy) {
   if (gx < 0 || gy < 0 || gx > GWIDTH || gy > GWIDTH) return null;
   return [gx, gy];
 }
-function drawMap(you, players) {
-  const c = mapCanvas, ctx = c.getContext("2d");
+function fit2d(c) {
   const dpr = devicePixelRatio || 1;
-  c.width = innerWidth * dpr; c.height = innerHeight * dpr;
-  ctx.scale(dpr, dpr);
+  const w = innerWidth * dpr, h = innerHeight * dpr;
+  if (c.width !== w || c.height !== h) { c.width = w; c.height = h; }
+  const ctx = c.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, innerWidth, innerHeight);
+  return ctx;
+}
+
+function drawMap(you, players) {
+  const ctx = fit2d(mapCanvas);
   ctx.fillStyle = "rgba(0,0,0,0.88)";
   ctx.fillRect(0, 0, innerWidth, innerHeight);
   const sz = Math.min(innerWidth, innerHeight) - 60;
@@ -320,10 +327,7 @@ function drawMap(you, players) {
 
 // ---------- overlay (labels + reticle) ----------
 function drawOverlay(labels, you) {
-  const c = overlay, ctx = c.getContext("2d");
-  const dpr = devicePixelRatio || 1;
-  c.width = innerWidth * dpr; c.height = innerHeight * dpr;
-  ctx.scale(dpr, dpr);
+  const ctx = fit2d(overlay);
   ctx.font = "12px Consolas, monospace";
   ctx.textAlign = "center";
   for (const l of labels) {
@@ -392,9 +396,13 @@ function frame() {
     R.drawExplosion(b.x, b.y, (now - b.at) / 700);
   R.finish();
 
-  drawOverlay(labels, you);
+  if (mapOn) {
+    fit2d(overlay); // hide 3D labels/reticle under the map
+    drawMap(you, players);
+  } else {
+    drawOverlay(labels, you);
+  }
   updateHUD(curSnap.you, curSnap.players);
-  if (mapOn) drawMap(you, players);
 }
 
 buildJoinUI(null);
