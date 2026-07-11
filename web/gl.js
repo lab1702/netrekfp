@@ -343,9 +343,9 @@ Renderer.prototype.drawTorp = function (px, py, team, dist) {
                    Math.min(1, color[2] + .3), alpha, size);
 };
 
-Renderer.prototype.drawExplosion = function (px, py, age) { // age 0..1
+Renderer.prototype.drawExplosion = function (px, py, age, scale) { // age 0..1
   if (Math.hypot(px - this.eye[0], py - this.eye[2]) > BOOM_MAX) return;
-  const r = 100 + age * 900;
+  const r = (100 + age * 900) * (scale || 1);
   this.gl.depthMask(false); // translucent shell must not occlude torps/beams
   this.drawMesh(this.sphereBuf, this.sphereCount, true,
                 mat4Model(px, 0, py, 0, r), [1, .6, .15, (1 - age) * .8], 1);

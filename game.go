@@ -53,9 +53,9 @@ type PhaserFx struct {
 }
 
 type Boom struct {
-	X   float64 `json:"x"`
-	Y   float64 `json:"y"`
-	Big bool    `json:"big"`
+	X float64 `json:"x"`
+	Y float64 `json:"y"`
+	S float64 `json:"s"` // visual scale: 0.35 torp, ships blowup-base/100
 }
 
 type Player struct {
@@ -856,7 +856,7 @@ func (g *Game) freeTorp(t *Torp) {
 
 func (g *Game) explodeTorp(t *Torp) {
 	g.freeTorp(t)
-	g.booms = append(g.booms, Boom{t.X, t.Y, false})
+	g.booms = append(g.booms, Boom{t.X, t.Y, 0.35})
 	for _, p := range g.players {
 		if p == nil || p.Status != "alive" || p.ID == t.Owner {
 			continue
@@ -906,7 +906,6 @@ func (g *Game) checkSelfDestruct(p *Player) {
 
 // ship explosion splash (blowup, daemon.c:3549)
 func (g *Game) blowup(v *Player) {
-	g.booms = append(g.booms, Boom{v.X, v.Y, true})
 	base := 100
 	switch v.Ship.Type {
 	case "SC":
@@ -914,6 +913,8 @@ func (g *Game) blowup(v *Player) {
 	case "SB":
 		base = 200
 	}
+	// fireball scales with the same per-class blast strength as the damage
+	g.booms = append(g.booms, Boom{v.X, v.Y, float64(base) / 100})
 	for _, p := range g.players {
 		if p == nil || p == v || p.Status != "alive" {
 			continue

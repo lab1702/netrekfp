@@ -540,12 +540,13 @@ function frame() {
   const torps = interpList(curSnap.torps, prevSnap && prevSnap.torps, f);
   const now = performance.now();
 
-  // explosions emit light: nearest four active booms become point lights
+  // explosions emit light: nearest four active booms become point lights,
+  // radius and intensity scaled by blast class (torp 0.35 ... starbase 2.0)
   booms = booms.filter(b => now - b.at < 700);
   const lights = booms.map(b => {
     const age = (now - b.at) / 700;
-    return { x: b.x, y: b.y, r: b.big ? 6000 : 2500,
-             i: (1 - age) * (b.big ? 1.8 : 1.0),
+    return { x: b.x, y: b.y, r: Math.max(2500, 6000 * b.s),
+             i: (1 - age) * (0.9 + 0.9 * b.s),
              d2: (b.x - you.x) ** 2 + (b.y - you.y) ** 2 };
   }).sort((a, b) => a.d2 - b.d2);
 
@@ -579,7 +580,7 @@ function frame() {
   for (const ph of phaserFx)
     R.drawPhaser(ph.fx, ph.fy, ph.tx, ph.ty, ph.tm, (ph.until - now) / 300);
   for (const b of booms)
-    R.drawExplosion(b.x, b.y, (now - b.at) / 700);
+    R.drawExplosion(b.x, b.y, (now - b.at) / 700, b.s);
   R.finish();
 
   if (mapOn) {
