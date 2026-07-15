@@ -29,6 +29,7 @@ const (
 	MaxPerTeam  = 32
 	TournNeeded = 4                 // players per team for T-mode (user spec; Vanilla default is 5)
 	TournTicks  = 30 * 60 * 10      // 30 minutes at 10 Hz
+	MaxPop      = 70                // PopPlanet (daemon.c:2653): army growth cap outside t-mode (Vanilla MAX_POP)
 	ByteRad     = math.Pi * 2 / 256 // one netrek direction unit
 )
 
@@ -142,7 +143,7 @@ type Game struct {
 }
 
 func NewGame() *Game {
-	g := &Game{torps: map[int]*Torp{}, planets: resetPlanets()}
+	g := &Game{torps: map[int]*Torp{}, planets: resetPlanets(topArmies)}
 	g.popOrder = rand.Perm(40)
 	return g
 }
@@ -1091,6 +1092,11 @@ func (g *Game) popPlanet() {
 	if pl.Armies == 0 {
 		return
 	}
+	// daemon.c:2653: growth halts at MAX_POP unless a tournament is running
+	// (t-mode lifts the cap; bombing and the 30-min clock hold armies down there)
+	if pl.Armies >= MaxPop && !g.tmode {
+		return
+	}
 	if pl.Armies < 4 {
 		if rand.Intn(20) == 0 {
 			pl.Armies++
@@ -1128,9 +1134,10 @@ func (g *Game) tmodeNow() bool {
 func (g *Game) checkTmode() {
 	now := g.tmodeNow()
 	if now && !g.tmode {
+		g.resetGalaxy(tmodeArmies) // INL tournament galaxy: 12 armies, cleared stats
 		g.tmode = true
 		g.tmodeLeft = TournTicks
-		g.say("T-MODE! 30 minutes on the clock.")
+		g.say("T-MODE! 30 minutes on the clock. Galaxy reset.")
 	} else if !now && g.tmode {
 		g.endTmode("not enough players")
 	}
@@ -1146,7 +1153,15 @@ func (g *Game) endTmode(reason string) {
 func (g *Game) endRound() {
 	g.tmode = false
 	g.say("Stats discarded, galaxy reset.")
-	g.planets = resetPlanets()
+	g.resetGalaxy(topArmies) // back to warmup: 30 armies
+}
+
+// resetGalaxy rebuilds the virginal galaxy with `armies` on every planet and
+// clears carried armies and kills. t-mode begins with the INL tournament count
+// (tmodeArmies); a round ending drops back to the warmup count (topArmies), so a
+// tournament always starts fresh rather than inheriting armies grown in warmup.
+func (g *Game) resetGalaxy(armies int) {
+	g.planets = resetPlanets(armies)
 	for _, p := range g.players {
 		if p != nil {
 			p.Kills = 0

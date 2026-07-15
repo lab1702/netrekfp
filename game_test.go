@@ -74,6 +74,83 @@ func TestTmodeLifecycle(t *testing.T) {
 	}
 }
 
+func TestPopCapOutsideTmode(t *testing.T) {
+	g := NewGame()
+	// Not in t-mode: a planet already at the cap must not grow.
+	g.planets[0].Armies = MaxPop
+	for i := 0; i < 5000; i++ {
+		g.popPlanet()
+	}
+	if g.planets[0].Armies != MaxPop {
+		t.Fatalf("planet grew past MaxPop outside t-mode: got %d", g.planets[0].Armies)
+	}
+
+	// In t-mode the cap is lifted (Vanilla parity), so growth resumes.
+	g.tmode = true
+	for i := 0; i < 5000; i++ {
+		g.popPlanet()
+	}
+	if g.planets[0].Armies <= MaxPop {
+		t.Fatalf("planet should grow past MaxPop in t-mode, got %d", g.planets[0].Armies)
+	}
+}
+
+func TestTmodeStartResetsGalaxy(t *testing.T) {
+	g := NewGame()
+	// Simulate a long warmup: armies piled up and a bot carried some kills/armies.
+	for i := range g.planets {
+		g.planets[i].Armies = 250
+	}
+	for i := 0; i < 4; i++ {
+		addPlayer(t, g, "f", "F", "CA")
+		addPlayer(t, g, "r", "R", "CA")
+	}
+	g.players[0].Kills = 3
+	g.players[0].Armies = 2
+
+	g.checkTmode()
+	if !g.tmode {
+		t.Fatal("tmode should start with 4v4")
+	}
+	for _, pl := range g.planets {
+		if pl.Armies != tmodeArmies {
+			t.Fatalf("planets should reset to INL %d at t-mode start, got %d", tmodeArmies, pl.Armies)
+		}
+	}
+	if g.players[0].Kills != 0 || g.players[0].Armies != 0 {
+		t.Fatalf("stats should clear at t-mode start, kills=%v armies=%d",
+			g.players[0].Kills, g.players[0].Armies)
+	}
+}
+
+func TestINLResourceLayout(t *testing.T) {
+	// pl_reset_inl (robots/inl.c) seats, per quadrant: 2 AGRI, 3 REPAIR
+	// (home + 1 front + 1 core), and 6 FUEL (home + 3 front + 2 core). The 6th
+	// fuel is the INL "fuel next to the agri" rule; Vanilla pl_reset() gives 5.
+	// Quadrant q is planets [10q, 10q+10). Exercised over many randomized runs.
+	for trial := 0; trial < 300; trial++ {
+		pls := resetPlanets(topArmies)
+		for q := 0; q < 4; q++ {
+			var agri, repair, fuel int
+			for i := q * 10; i < q*10+10; i++ {
+				if pls[i].Flags&PlAgri != 0 {
+					agri++
+				}
+				if pls[i].Flags&PlRepair != 0 {
+					repair++
+				}
+				if pls[i].Flags&PlFuel != 0 {
+					fuel++
+				}
+			}
+			if agri != 2 || repair != 3 || fuel != 6 {
+				t.Fatalf("quadrant %d: want AGRI=2 REPAIR=3 FUEL=6, got %d/%d/%d",
+					q, agri, repair, fuel)
+			}
+		}
+	}
+}
+
 func TestPhaserFalloff(t *testing.T) {
 	g := NewGame()
 	shooter := addPlayer(t, g, "s", "F", "CA").player

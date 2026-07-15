@@ -2,8 +2,9 @@ package main
 
 import "math/rand"
 
-// Planet layout verbatim from netrek-server ntserv/planet.c virginal[],
-// resource randomization from pl_reset() in the same file.
+// Planet layout verbatim from netrek-server ntserv/planet.c virginal[];
+// resource randomization from the INL tournament robot's pl_reset_inl()
+// (robots/inl.c), which is what governs a real tournament galaxy.
 
 const (
 	TeamFed = iota
@@ -93,23 +94,29 @@ var frontPlanets = [4][5]int{
 	{1, 2, 4, 6, 3}, {14, 18, 13, 17, 11}, {22, 28, 23, 21, 27}, {31, 32, 33, 35, 36},
 }
 
-const topArmies = 30 // initial army count, ntserv/data.c
+const topArmies = 30    // warmup army count, ntserv/data.c top_armies
+const tmodeArmies = 12  // INL tournament start_armies (robots/inl.c:125)
 
-// resetPlanets rebuilds the galaxy: virginal layout, 30 armies each, and the
-// Vanilla pl_reset() randomized AGRI/REPAIR/FUEL distribution per quadrant.
-func resetPlanets() []*Planet {
+// resetPlanets rebuilds the galaxy: virginal layout, `armies` on every planet,
+// and the INL pl_reset_inl() randomized AGRI/REPAIR/FUEL distribution per
+// quadrant. Per quadrant this yields 2 AGRI, 3 REPAIR (home + 1 front + 1 core),
+// and 6 FUEL (home + 3 front + 2 core) — the extra front fuel is the INL rule
+// that seats a fuel planet next to each front AGRI (Vanilla pl_reset() omits it).
+func resetPlanets(armies int) []*Planet {
 	pls := make([]*Planet, 40)
 	for i, v := range virginal {
 		pls[i] = &Planet{N: i, Name: v.name, X: v.x, Y: v.y, Owner: v.owner,
-			Armies: topArmies, Flags: v.flags}
+			Armies: armies, Flags: v.flags}
 	}
 	for i := 0; i < 4; i++ {
 		core, front := corePlanets[i], frontPlanets[i]
-		pls[core[rand.Intn(4)]].Flags |= PlAgri
+		pls[core[rand.Intn(4)]].Flags |= PlAgri // one core AGRI
 		if rand.Intn(2) == 1 {
-			pls[front[rand.Intn(2)]].Flags |= PlAgri
+			a := rand.Intn(2)                        // AGRI on the inner front pair {0,1}
+			pls[front[a]].Flags |= PlAgri            //
+			pls[front[1-a]].Flags |= PlFuel          // INL: fuel next to the agri
 			pls[front[rand.Intn(3)+2]].Flags |= PlRepair
-			for j := 0; j < 2; j++ {
+			for j := 0; j < 2; j++ { // 2 FUEL on the outer front {2,3,4}
 				k := rand.Intn(3)
 				for pls[front[k+2]].Flags&PlFuel != 0 {
 					k = (k + 1) % 3
@@ -117,9 +124,11 @@ func resetPlanets() []*Planet {
 				pls[front[k+2]].Flags |= PlFuel
 			}
 		} else {
-			pls[front[rand.Intn(2)+3]].Flags |= PlAgri
+			a := rand.Intn(2)                        // AGRI on the outer front pair {3,4}
+			pls[front[a+3]].Flags |= PlAgri          //
+			pls[front[(1-a)+3]].Flags |= PlFuel      // INL: fuel next to the agri
 			pls[front[rand.Intn(3)]].Flags |= PlRepair
-			for j := 0; j < 2; j++ {
+			for j := 0; j < 2; j++ { // 2 FUEL on the inner front {0,1,2}
 				k := rand.Intn(3)
 				for pls[front[k]].Flags&PlFuel != 0 {
 					k = (k + 1) % 3
@@ -127,8 +136,8 @@ func resetPlanets() []*Planet {
 				pls[front[k]].Flags |= PlFuel
 			}
 		}
-		pls[core[rand.Intn(4)]].Flags |= PlRepair
-		for j := 0; j < 2; j++ {
+		pls[core[rand.Intn(4)]].Flags |= PlRepair // one more core REPAIR
+		for j := 0; j < 2; j++ {                  // 2 FUEL in the core
 			k := rand.Intn(4)
 			for pls[core[k]].Flags&PlFuel != 0 {
 				k = (k + 1) % 4
