@@ -9,6 +9,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/gorilla/websocket"
 )
@@ -17,14 +18,24 @@ type Server struct {
 	game    *Game
 	mu      sync.Mutex
 	clients map[*Client]bool
+	pending int
 }
 
 type Client struct {
 	srv    *Server
 	conn   *websocket.Conn
-	send   chan []byte
+	send   chan []byte // reliable protocol replies and one-shot events
+	snap   chan []byte // latest-value state mailbox
 	player *Player
 }
+
+const (
+	maxWSClients = MaxPlayers
+	writeWait    = 10 * time.Second
+	pongWait     = 60 * time.Second
+	pingPeriod   = pongWait * 9 / 10
+	joinWait     = 2 * time.Minute
+)
 
 var upgrader = websocket.Upgrader{
 	ReadBufferSize: 1024, WriteBufferSize: 16384,
@@ -176,22 +187,61 @@ type wireSnap struct {
 	Counts  map[string]int `json:"counts"`
 }
 
+type wireEvents struct {
+	T       string     `json:"t"`
+	Phasers []PhaserFx `json:"phasers,omitempty"`
+	Msgs    []string   `json:"msgs,omitempty"`
+	Booms   []Boom     `json:"booms,omitempty"`
+	Chats   []Chat     `json:"chats,omitempty"`
+}
+
+func (s *Server) reserveClient() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(s.clients)+s.pending >= maxWSClients {
+		return false
+	}
+	s.pending++
+	return true
+}
+
+func (s *Server) finishReservation(c *Client) {
+	s.mu.Lock()
+	s.pending--
+	if c != nil {
+		if s.clients == nil {
+			s.clients = make(map[*Client]bool)
+		}
+		s.clients[c] = true
+	}
+	s.mu.Unlock()
+}
+
 func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
-	conn, err := upgrader.Upgrade(w, r, nil)
-	if err != nil {
+	if !s.reserveClient() {
+		http.Error(w, "websocket capacity reached", http.StatusServiceUnavailable)
 		return
 	}
-	c := &Client{srv: s, conn: conn, send: make(chan []byte, 32)}
-	s.mu.Lock()
-	s.clients[c] = true
-	s.mu.Unlock()
+	conn, err := upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		s.finishReservation(nil)
+		return
+	}
+	c := &Client{
+		srv: s, conn: conn,
+		send: make(chan []byte, 32),
+		snap: make(chan []byte, 1),
+	}
+	s.finishReservation(c)
 
 	s.game.mu.Lock()
 	welcome, _ := json.Marshal(map[string]any{
 		"t": "welcome", "counts": s.game.teamCounts(), "planets": s.game.wirePlanetsFull(),
 	})
 	s.game.mu.Unlock()
-	c.send <- welcome
+	if !c.queueReliable(welcome) {
+		return
+	}
 
 	go c.writePump()
 	c.readPump()
@@ -208,6 +258,16 @@ func (c *Client) readPump() {
 		c.srv.mu.Unlock()
 	}()
 	c.conn.SetReadLimit(512)
+	joinBy := time.Now().Add(joinWait)
+	joined := false
+	_ = c.conn.SetReadDeadline(joinBy)
+	c.conn.SetPongHandler(func(string) error {
+		deadline := time.Now().Add(pongWait)
+		if !joined && deadline.After(joinBy) {
+			deadline = joinBy
+		}
+		return c.conn.SetReadDeadline(deadline)
+	})
 	for {
 		_, data, err := c.conn.ReadMessage()
 		if err != nil {
@@ -217,7 +277,9 @@ func (c *Client) readPump() {
 		if json.Unmarshal(data, &m) != nil {
 			continue
 		}
-		if math.IsNaN(m.D) || math.IsInf(m.D, 0) {
+		var ok bool
+		m.D, ok = normalizeDirection(m.D)
+		if !ok {
 			continue
 		}
 		if m.T == "chat" {
@@ -239,10 +301,12 @@ func (c *Client) readPump() {
 				resp, _ = json.Marshal(map[string]any{"t": "deny", "reason": deny})
 			} else {
 				resp, _ = json.Marshal(map[string]any{"t": "joined", "id": p.ID})
+				joined = true
+				_ = c.conn.SetReadDeadline(time.Now().Add(pongWait))
 			}
-			// blocking send: this reply is required protocol, not a droppable
-			// snapshot; writePump drains the channel even after a write error
-			c.send <- resp
+			if !c.queueReliable(resp) {
+				return
+			}
 			continue
 		}
 		switch m.T {
@@ -272,16 +336,72 @@ func (c *Client) readPump() {
 }
 
 func (c *Client) writePump() {
-	for data := range c.send {
-		if c.conn.WriteMessage(websocket.TextMessage, data) != nil {
-			c.conn.Close()
-			// drain until readPump closes the channel
-			for range c.send {
+	ticker := time.NewTicker(pingPeriod)
+	defer func() {
+		ticker.Stop()
+		_ = c.conn.Close()
+	}()
+	write := func(messageType int, data []byte) bool {
+		_ = c.conn.SetWriteDeadline(time.Now().Add(writeWait))
+		return c.conn.WriteMessage(messageType, data) == nil
+	}
+	for {
+		// Prefer protocol replies and transient events when both queues are ready.
+		select {
+		case data, ok := <-c.send:
+			if !ok || !write(websocket.TextMessage, data) {
+				return
 			}
-			return
+			continue
+		default:
+		}
+		select {
+		case data, ok := <-c.send:
+			if !ok || !write(websocket.TextMessage, data) {
+				return
+			}
+		case data := <-c.snap:
+			if !write(websocket.TextMessage, data) {
+				return
+			}
+		case <-ticker.C:
+			if !write(websocket.PingMessage, nil) {
+				return
+			}
 		}
 	}
-	c.conn.Close()
+}
+
+// queueReliable never drops protocol or one-shot data. A client that cannot
+// keep up with this bounded queue is disconnected so it can resynchronize.
+func (c *Client) queueReliable(data []byte) bool {
+	select {
+	case c.send <- data:
+		return true
+	default:
+		if c.conn != nil {
+			_ = c.conn.Close()
+		}
+		return false
+	}
+}
+
+// queueSnapshot overwrites stale state while preserving the newest complete
+// snapshot. broadcast is the sole sender, so the drain-and-replace is safe.
+func (c *Client) queueSnapshot(data []byte) {
+	select {
+	case c.snap <- data:
+		return
+	default:
+	}
+	select {
+	case <-c.snap:
+	default:
+	}
+	select {
+	case c.snap <- data:
+	default:
+	}
 }
 
 func (g *Game) wirePlanetsFull() []wirePlanetFull {
@@ -316,23 +436,25 @@ func (s *Server) broadcast() {
 		planets[i] = wirePlanet{pl.N, teamLetter(pl.Owner), pl.Armies, pl.Flags}
 	}
 	snap := wireSnap{
-		T: "snap", Players: players, Torps: torps, Phasers: append([]PhaserFx{}, g.phasers...),
+		T: "snap", Players: players, Torps: torps,
 		Planets: planets, Tmode: wireTmode{g.tmode, g.tmodeLeft / 10},
-		Msgs: append([]string{}, g.msgs...), Booms: append([]Boom{}, g.booms...),
 		Counts: g.teamCounts(),
 	}
+	events := wireEvents{
+		T: "events", Msgs: append([]string{}, g.msgs...),
+		Booms: append([]Boom{}, g.booms...), Phasers: append([]PhaserFx{}, g.phasers...),
+	}
 	chats := append([]Chat{}, g.chats...)
-
-	// consumed: anything Command() appends between broadcasts ships exactly once
-	g.msgs = g.msgs[:0]
-	g.booms = g.booms[:0]
-	g.phasers = g.phasers[:0]
-	g.chats = g.chats[:0]
 
 	// sends happen under s.mu so a disconnecting client can't close its channel
 	// mid-fanout; the sends are non-blocking so holding the lock is safe
 	s.mu.Lock()
-	g.clientsOnline = len(s.clients)
+	g.clientsOnline = 0
+	for c := range s.clients {
+		if c.player != nil {
+			g.clientsOnline++
+		}
+	}
 	for c := range s.clients {
 		p := c.player
 		if p == nil {
@@ -360,24 +482,53 @@ func (s *Server) broadcast() {
 		}
 		mine.Players = vis
 		mine.Chats = nil
+		mineEvents := events
 		for _, ch := range chats {
 			if chatVisible(ch, p.Team) {
-				mine.Chats = append(mine.Chats, ch)
+				mineEvents.Chats = append(mineEvents.Chats, ch)
 			}
 		}
 		data, err := json.Marshal(&mine)
-		if err != nil {
-			continue
+		if err == nil {
+			c.queueSnapshot(data)
 		}
-		select {
-		case c.send <- data:
-		default: // slow consumer: skip this frame rather than block the loop
+		if len(mineEvents.Msgs) != 0 || len(mineEvents.Booms) != 0 ||
+			len(mineEvents.Phasers) != 0 || len(mineEvents.Chats) != 0 {
+			if data, err := json.Marshal(&mineEvents); err == nil {
+				c.queueReliable(data)
+			}
 		}
 	}
 	s.mu.Unlock()
+
+	// Consumed only after every joined client has either queued the events or
+	// been disconnected for falling behind.
+	g.msgs = g.msgs[:0]
+	g.booms = g.booms[:0]
+	g.phasers = g.phasers[:0]
+	g.chats = g.chats[:0]
 	g.mu.Unlock()
 }
 
-func round3(f float64) float64 { return math.Round(f*1000) / 1000 }
+func normalizeDirection(d float64) (float64, bool) {
+	if math.IsNaN(d) || math.IsInf(d, 0) {
+		return 0, false
+	}
+	d = math.Remainder(d, 2*math.Pi)
+	if d == 0 { // canonicalize negative zero for cleaner JSON
+		return 0, true
+	}
+	return d, true
+}
+
+func round3(f float64) float64 {
+	if math.IsNaN(f) || math.IsInf(f, 0) {
+		return 0
+	}
+	if math.Abs(f) > math.MaxFloat64/1000 {
+		return f
+	}
+	return math.Round(f*1000) / 1000
+}
 
 func init() { log.SetFlags(log.Ltime) }

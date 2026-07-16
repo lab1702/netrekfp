@@ -43,14 +43,24 @@ func main() {
 	}
 
 	go func() {
-		for range time.Tick(100 * time.Millisecond) {
+		ticker := time.NewTicker(100 * time.Millisecond)
+		defer ticker.Stop()
+		for range ticker.C {
 			game.Tick()
 			srv.broadcast()
 		}
 	}()
 
 	log.Printf("netrekfp listening on %s", *addr)
-	log.Fatal(http.ListenAndServe(*addr, nil))
+	httpServer := &http.Server{
+		Addr:              *addr,
+		Handler:           http.DefaultServeMux,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       60 * time.Second,
+	}
+	log.Fatal(httpServer.ListenAndServe())
 }
 
 type gzipWriter struct {
@@ -77,7 +87,7 @@ func gzipHandler(next http.Handler) http.Handler {
 		}
 		w.Header().Set("Content-Encoding", "gzip")
 		gz := gzip.NewWriter(w)
-		defer gz.Close()
+		defer func() { _ = gz.Close() }()
 		next.ServeHTTP(&gzipWriter{w, gz}, r)
 	})
 }

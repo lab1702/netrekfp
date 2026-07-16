@@ -18,9 +18,10 @@ var botNames = []string{
 }
 
 type botState struct {
-	Cooldown       int // ticks until next decision
-	Target         int // current combat target id, -1
-	TargetLock     int // ticks remaining on target lock (prevents thrashing)
+	Cooldown       int     // ticks until next decision
+	Role           botRole // persistent free-play assignment
+	Target         int     // current combat target id, -1
+	TargetLock     int     // ticks remaining on target lock (prevents thrashing)
 	TargetValue    float64
 	PlanetApproach int // planet we were heading to before a fight, -1
 	DefenseTarget  int // planet we are defending, -1
@@ -33,8 +34,17 @@ type botState struct {
 	VolleyDir      float64
 }
 
+type botRole int
+
+const (
+	botRoleUnset botRole = iota
+	botRoleHunter
+	botRoleDefender
+	botRoleRaider
+)
+
 func newBotState() *botState {
-	return &botState{Target: -1, PlanetApproach: -1, DefenseTarget: -1}
+	return &botState{Role: botRoleUnset, Target: -1, PlanetApproach: -1, DefenseTarget: -1}
 }
 
 func teamIndex(letter string) int {
@@ -115,14 +125,22 @@ func (g *Game) removeBot(team int) {
 		if p == nil || p.Bot == nil || p.Team != team {
 			continue
 		}
-		for id, t := range g.torps {
-			if t.Owner == p.ID {
-				delete(g.torps, id)
-			}
-		}
+		g.purgeBotTorps(p)
 		g.players[i] = nil
 		return
 	}
+}
+
+// purgeBotTorps removes projectiles by player identity, not by reusable slot
+// number. This prevents a later occupant of the same slot inheriting (or losing)
+// the departing bot's torpedo count.
+func (g *Game) purgeBotTorps(p *Player) {
+	for id, t := range g.torps {
+		if t.owner == p || t.owner == nil && t.Owner == p.ID {
+			delete(g.torps, id)
+		}
+	}
+	p.NTorps = 0
 }
 
 func (g *Game) AddBotCmd(teamL string) {
@@ -197,11 +215,7 @@ func (g *Game) ClearBots() {
 	n := 0
 	for i, p := range g.players {
 		if p != nil && p.Bot != nil {
-			for id, t := range g.torps {
-				if t.Owner == p.ID {
-					delete(g.torps, id)
-				}
-			}
+			g.purgeBotTorps(p)
 			g.players[i] = nil
 			n++
 		}
@@ -214,6 +228,7 @@ func (g *Game) ClearBots() {
 // updateBots runs every tick from Tick() with g.mu held.
 func (g *Game) updateBots() {
 	g.checkBotScuttle()
+	removedScuttler := false
 	for _, p := range g.players {
 		if p == nil || p.Bot == nil {
 			continue
@@ -221,7 +236,9 @@ func (g *Game) updateBots() {
 		switch p.Status {
 		case "dead":
 			if g.botsScuttling { // empty server: free the slot instead
+				g.purgeBotTorps(p)
 				g.players[p.ID] = nil
+				removedScuttler = true
 				continue
 			}
 			p.Bot.RespawnDelay++
@@ -233,24 +250,20 @@ func (g *Game) updateBots() {
 			g.updateBot(p)
 		}
 	}
+	if removedScuttler {
+		// Player-count transitions normally wait for the 1 Hz tournament check,
+		// but an empty-server teardown should not leave a stale tournament round.
+		g.checkTmode()
+	}
 }
 
 // checkBotScuttle: when the last human connection drops, every bot arms its
 // self-destruct; a human returning within the fuse cancels the scuttle.
 func (g *Game) checkBotScuttle() {
-	if g.clientsOnline == 0 && !g.botsScuttling {
-		armed := false
-		for _, p := range g.players {
-			if p != nil && p.Bot != nil && p.Status == "alive" {
-				p.SelfDest = g.tick + 100
-				armed = true
-			}
+	if g.clientsOnline > 0 {
+		if !g.botsScuttling {
+			return
 		}
-		if armed {
-			g.botsScuttling = true
-			g.say("No humans left — bots self destructing.")
-		}
-	} else if g.clientsOnline > 0 && g.botsScuttling {
 		g.botsScuttling = false
 		saved := false
 		for _, p := range g.players {
@@ -262,6 +275,28 @@ func (g *Game) checkBotScuttle() {
 		if saved {
 			g.say("Human back online — bot self destruct canceled.")
 		}
+		return
+	}
+
+	wasScuttling := g.botsScuttling
+	anyBots, armed := false, false
+	for _, p := range g.players {
+		if p == nil || p.Bot == nil {
+			continue
+		}
+		anyBots = true
+		if p.Status == "alive" && p.SelfDest == 0 {
+			p.SelfDest = g.tick + 100
+			armed = true
+		}
+	}
+	if !anyBots {
+		g.botsScuttling = false
+		return
+	}
+	g.botsScuttling = true
+	if armed && !wasScuttling {
+		g.say("No humans left — bots self destructing.")
 	}
 }
 

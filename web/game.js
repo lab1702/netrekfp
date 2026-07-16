@@ -168,17 +168,16 @@ function handle(m) {
     case "deny":
       joinMsg.textContent = m.reason;
       break;
+    case "events":
+      handleEvents(m, performance.now());
+      break;
     case "snap": {
       prevSnap = curSnap; curSnap = m; snapAt = performance.now();
       for (const p of m.planets) {
         const pl = planets[p.n]; pl.o = p.o; pl.a = p.a; pl.f = p.f;
       }
-      for (const ph of m.phasers || [])
-        phaserFx.push({ ...ph, until: snapAt + 300 });
-      for (const b of m.booms || [])
-        booms.push({ ...b, at: snapAt });
-      for (const txt of m.msgs || []) logMsg(txt);
-      for (const c of m.chats || []) logChat(c);
+      // Accept legacy snapshots that still carry transient effects.
+      handleEvents(m, snapAt);
       if (playerListDiv.style.display === "block") renderPlayerList();
       if (m.you.st === "dead" && joined) {
         joined = false;
@@ -194,6 +193,15 @@ function handle(m) {
       break;
     }
   }
+}
+
+function handleEvents(m, at) {
+  for (const ph of m.phasers || [])
+    phaserFx.push({ ...ph, until: at + 300 });
+  for (const b of m.booms || [])
+    booms.push({ ...b, at });
+  for (const txt of m.msgs || []) logMsg(txt);
+  for (const c of m.chats || []) logChat(c);
 }
 
 // ---------- chat: ALL and TEAM logs on the right, one input box ----------

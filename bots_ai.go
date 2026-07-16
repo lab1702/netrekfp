@@ -43,6 +43,22 @@ type combatThreat struct {
 	immediate    bool
 }
 
+// Bot objective transitions bypass Command(), so keep the same bomb/beam
+// invariant here: either action lowers shields and cancels repair mode.
+func botStartBombing(p *Player) {
+	p.Bombing = true
+	p.Beaming = 0
+	p.RepairMode = false
+	p.ShieldsUp = false
+}
+
+func botStartBeaming(p *Player, dir int) {
+	p.Bombing = false
+	p.Beaming = dir
+	p.RepairMode = false
+	p.ShieldsUp = false
+}
+
 // ---------- brain ----------
 
 func (g *Game) updateBot(p *Player) {
@@ -73,7 +89,7 @@ func (g *Game) updateBot(p *Player) {
 	// stuck-bombing fix (netrek-web bots.go:100): planet flipped or bombed out
 	if p.Bombing && p.Orbiting >= 0 {
 		pl := g.planets[p.Orbiting]
-		if pl.Owner == p.Team || pl.Armies < 5 {
+		if pl.Owner == p.Team || pl.Armies < 5 || g.thirdSpace(pl) {
 			p.Bombing = false
 			b.Cooldown = 5
 		}
@@ -185,8 +201,7 @@ func (g *Game) botTournament(p *Player, enemy *Player, enemyDist float64, th com
 			return
 		}
 		if g.botGoOrbit(p, drop, th) {
-			p.Bombing = false
-			p.Beaming = 2
+			botStartBeaming(p, 2)
 			b.Cooldown = 20
 			return
 		}
@@ -199,7 +214,7 @@ func (g *Game) botTournament(p *Player, enemy *Player, enemyDist float64, th com
 	// keep bombing a planet we're already working on
 	if p.Bombing && p.Orbiting >= 0 {
 		pl := g.planets[p.Orbiting]
-		if pl.Owner != p.Team && pl.Owner != TeamNone && pl.Armies >= 5 {
+		if pl.Owner != p.Team && pl.Owner != TeamNone && pl.Armies >= 5 && !g.thirdSpace(pl) {
 			if enemyDist < 2000 && p.Damage > p.Ship.MaxDamage*2/3 {
 				g.breakOrbit(p)
 			} else {
@@ -268,20 +283,17 @@ func (g *Game) botTournament(p *Player, enemy *Player, enemyDist float64, th com
 		switch {
 		case target.Owner == p.Team:
 			if target.Armies > 4 && canCarryMore {
-				p.Bombing = false
-				p.Beaming = 1
+				botStartBeaming(p, 1)
 				b.Cooldown = 20
 			} else {
 				g.breakOrbit(p)
 				b.Cooldown = 10
 			}
 		case target.Armies >= 5:
-			p.Bombing = true
-			p.Beaming = 0
+			botStartBombing(p)
 			b.Cooldown = 10
 		case p.Armies > 0:
-			p.Bombing = false
-			p.Beaming = 2 // kill the last defenders / take it
+			botStartBeaming(p, 2) // kill the last defenders / take it
 			b.Cooldown = 10
 		default:
 			g.breakOrbit(p)
@@ -297,8 +309,9 @@ func (g *Game) botTournament(p *Player, enemy *Player, enemyDist float64, th com
 // non-tournament: roles for practice combat (netrek-web bots.go:524-620)
 func (g *Game) botFreePlay(p *Player, enemy *Player, enemyDist float64, th combatThreat) {
 	critical := p.Damage > p.Ship.MaxDamage*3/4
-	switch g.botRole(p) {
-	case 0: // hunter
+	p.Bot.Role = g.botRole(p)
+	switch p.Bot.Role {
+	case botRoleHunter:
 		if t := g.botBestTarget(p); t != nil {
 			d := dist2d(p.X, p.Y, t.X, t.Y)
 			if critical && d < 6000 {
@@ -308,7 +321,7 @@ func (g *Game) botFreePlay(p *Player, enemy *Player, enemyDist float64, th comba
 			g.botEngage(p, t, d, th)
 			return
 		}
-	case 1: // defender
+	case botRoleDefender:
 		if pl := g.botPlanetToDefend(p); pl != nil {
 			d := dist2d(p.X, p.Y, pl.X, pl.Y)
 			if d > 5000 {
@@ -318,10 +331,10 @@ func (g *Game) botFreePlay(p *Player, enemy *Player, enemyDist float64, th comba
 			}
 			return
 		}
-	case 2: // raider
+	case botRoleRaider:
 		if pl := g.botPlanetToRaid(p); pl != nil {
 			if g.botGoOrbit(p, pl, th) {
-				p.Bombing = true
+				botStartBombing(p)
 				p.Bot.Cooldown = 30
 			}
 			return
@@ -334,7 +347,7 @@ func (g *Game) botFreePlay(p *Player, enemy *Player, enemyDist float64, th comba
 	g.botPatrol(p, th)
 }
 
-func (g *Game) botRole(p *Player) int {
+func (g *Game) botRole(p *Player) botRole {
 	owned, hunters, defenders := 0, 0, 0
 	for _, pl := range g.planets {
 		if pl.Owner == p.Team {
@@ -342,13 +355,13 @@ func (g *Game) botRole(p *Player) int {
 		}
 	}
 	for _, q := range g.players {
-		if q == nil || q.Bot == nil || q.Team != p.Team || q.Status != "alive" {
+		if q == nil || q == p || q.Bot == nil || q.Team != p.Team || q.Status != "alive" {
 			continue
 		}
-		if q.Bot.Target >= 0 {
+		switch q.Bot.Role {
+		case botRoleHunter:
 			hunters++
-		}
-		if q.Bot.DefenseTarget >= 0 {
+		case botRoleDefender:
 			defenders++
 		}
 	}
@@ -356,17 +369,17 @@ func (g *Game) botRole(p *Player) int {
 	switch {
 	case control < 0.2:
 		if defenders < 2 {
-			return 1
+			return botRoleDefender
 		}
-		return 2
+		return botRoleRaider
 	case control > 0.6:
-		return 0
+		return botRoleHunter
 	case hunters > defenders+1:
-		return 1
+		return botRoleDefender
 	case p.Kills >= 2:
-		return 2
+		return botRoleRaider
 	default:
-		return 0
+		return botRoleHunter
 	}
 }
 
@@ -378,11 +391,11 @@ func (g *Game) botEngage(p, target *Player, dist float64, th combatThreat) {
 	// keep bombing through a distant threat (netrek-web bot_combat.go:13-37)
 	if p.Orbiting >= 0 {
 		pl := g.planets[p.Orbiting]
-		if pl.Owner == p.Team || pl.Armies < 5 ||
+		if pl.Owner == p.Team || pl.Armies < 5 || g.thirdSpace(pl) ||
 			(dist < 2000 && p.Damage > p.Ship.MaxDamage/2) {
 			g.breakOrbit(p)
 		} else if dist > 4000 {
-			p.Bombing = true
+			botStartBombing(p)
 			b.Cooldown = 5
 			return
 		}
@@ -403,11 +416,11 @@ func (g *Game) botEngage(p, target *Player, dist float64, th combatThreat) {
 	}
 
 	// cloaking tactics for SC/DD (netrek-web bot_combat.go:96)
-	if (p.Ship.Type == "SC" || p.Ship.Type == "DD") && p.Fuel > 3000 {
-		if g.botShouldCloak(p, dist) {
-			p.Cloaked = true
-		} else if p.Cloaked && (p.Fuel < 1500 || dist < 1000) {
+	if p.Ship.Type == "SC" || p.Ship.Type == "DD" {
+		if p.Cloaked && (p.Fuel < 1500 || dist < 1000) {
 			p.Cloaked = false
+		} else if !p.Cloaked && p.Fuel > 3000 && g.botShouldCloak(p, dist) {
+			p.Cloaked = true
 		}
 	}
 	if p.Cloaked {
@@ -717,6 +730,10 @@ func (g *Game) botTorpThreatening(p *Player, t *Torp) bool {
 }
 
 func (g *Game) botShields(p *Player, th combatThreat) {
+	if p.Bombing || p.Beaming != 0 {
+		p.ShieldsUp = false
+		return
+	}
 	if p.Fuel < botFuelCritical {
 		p.ShieldsUp = false
 		return
@@ -1100,6 +1117,7 @@ func (g *Game) threatenedPlanet(p *Player) (*Planet, *Player, float64) {
 
 func (g *Game) botDefendPlanet(p *Player, pl *Planet, enemy *Player, dist float64) {
 	b := p.Bot
+	b.Role = botRoleDefender
 	b.DefenseTarget = pl.N
 	g.breakOrbit(p)
 	p.Orbiting = -1

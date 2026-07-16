@@ -35,14 +35,19 @@ const (
 
 type Torp struct {
 	ID     int
-	Owner  int
+	Owner  int // firing slot, retained for wire/debug metadata
 	Team   int
 	X, Y   float64
 	Dir    float64
 	Speed  int // warp
 	Fuse   int // ticks
 	Damage int
-	Detter int // player who detted it, -1
+	Detter int // detter slot, retained for wire/debug metadata; -1 when unset
+
+	// Slots are reusable, so delayed projectile bookkeeping and attribution must
+	// use player identity rather than looking up whoever currently occupies an ID.
+	owner  *Player
+	detter *Player
 }
 
 type PhaserFx struct {
@@ -87,13 +92,13 @@ type Player struct {
 	DesSpeed int
 	SubSpeed int
 
-	Shield              int
-	Damage              int
+	Shield               int
+	Damage               int
 	SubShield, SubDamage int
-	Fuel                int
-	WTemp, ETemp        int
-	WLock, ELock        bool // overheat lockouts (PFWEP / PFENG)
-	WTime, ETime        int
+	Fuel                 int
+	WTemp, ETemp         int
+	WLock, ELock         bool // overheat lockouts (PFWEP / PFENG)
+	WTime, ETime         int
 
 	ShieldsUp  bool
 	Cloaked    bool
@@ -102,16 +107,18 @@ type Player struct {
 	Beaming    int // 0 none, 1 up, 2 down
 	Orbiting   int // planet index or -1
 
-	Armies       int
-	Kills        float64
-	NTorps       int
-	PhaserBusy   int // ticks until phaser ready
-	ExplodeTicks int
-	LastTorpTick int64
-	WhoDead      int // killer id for explosion chain credit (daemon.c blowup), -1
-	SelfDest     int64 // tick the armed self-destruct fires at; 0 = disarmed
-	SelfKill     bool  // died by self-destruct: KQUIT blowup spares teammates
-	LockPlanet   int   // planet lock (PFPLLOCK): full autopilot; -1 off
+	Armies        int
+	Kills         float64
+	NTorps        int
+	PhaserBusy    int // ticks until phaser ready
+	ExplodeTicks  int
+	LastTorpTick  int64
+	WhoDead       *Player // stable killer identity for explosion-chain credit
+	WhoDeadTeam   int     // killer's team when the fatal damage landed
+	WhoDeadDirect bool    // fatal damage came from a torp/phaser, not splash/environment
+	SelfDest      int64   // tick the armed self-destruct fires at; 0 = disarmed
+	SelfKill      bool    // died by self-destruct: KQUIT blowup spares teammates
+	LockPlanet    int     // planet lock (PFPLLOCK): full autopilot; -1 off
 
 	Bot *botState // non-nil for AI players
 
@@ -132,7 +139,7 @@ type Game struct {
 	popOrder []int
 	popIdx   int
 
-	clientsOnline int // humans connected (set by broadcast); bots scuttle at 0
+	clientsOnline int // joined humans; Join/Leave update it and broadcast reconciles it
 	botsScuttling bool
 
 	// per-tick transient output
@@ -222,6 +229,17 @@ func (g *Game) Join(cl *Client, name string, teamL, shipT string) (*Player, stri
 		p = &Player{ID: slot, client: cl}
 		g.players[slot] = p
 		cl.player = p
+		// A successful join must be visible to bot-scuttle logic immediately;
+		// waiting for the next broadcast leaves a one-tick fuse-boundary race.
+		g.clientsOnline++
+	}
+	// Torpedoes survive death on the same team, but must not follow a player
+	// through outfit onto a different team. In particular, an old team's torp
+	// must never inherit the rejoined player's new allegiance.
+	for _, t := range g.torps {
+		if t.owner == p && t.Team != team {
+			g.freeTorp(t)
+		}
 	}
 	p.Name = name
 	p.Team = team
@@ -252,14 +270,16 @@ func (g *Game) spawn(p *Player) {
 	p.Kills = 0
 	p.NTorps = 0
 	for _, t := range g.torps { // surviving torps still count against the 8-tube limit
-		if t.Owner == p.ID {
+		if t.owner == p {
 			p.NTorps++
 		}
 	}
 	p.PhaserBusy = 0
 	p.ExplodeTicks = 0
 	p.LastTorpTick = -1
-	p.WhoDead = -1
+	p.WhoDead = nil
+	p.WhoDeadTeam = TeamNone
+	p.WhoDeadDirect = false
 	p.SelfDest = 0
 	p.SelfKill = false
 	p.LockPlanet = -1
@@ -277,12 +297,15 @@ func (g *Game) Leave(cl *Client) {
 		g.blowup(p) // don't let disconnecting cancel the pending splash
 	}
 	for id, t := range g.torps { // the slot's next occupant must not inherit these
-		if t.Owner == p.ID {
+		if t.owner == p {
 			delete(g.torps, id)
 		}
 	}
 	g.players[p.ID] = nil
 	cl.player = nil
+	if g.clientsOnline > 0 {
+		g.clientsOnline--
+	}
 }
 
 // ---------- commands (called with lock held via Command) ----------
@@ -325,6 +348,10 @@ func (g *Game) Command(p *Player, cmd string, dir float64, val int) {
 		g.say("%s: locking onto %s", p.Name, g.planets[val].Name)
 	case "shields":
 		p.ShieldsUp = !p.ShieldsUp
+		if p.ShieldsUp {
+			p.Bombing = false
+			p.Beaming = 0
+		}
 		p.RepairMode = false
 	case "torp":
 		g.fireTorp(p, dir)
@@ -342,6 +369,7 @@ func (g *Game) Command(p *Player, cmd string, dir float64, val int) {
 		p.RepairMode = !p.RepairMode
 		if p.RepairMode {
 			p.DesSpeed = 0
+			p.LockPlanet = -1
 			p.ShieldsUp = false
 			p.Bombing = false
 			p.Beaming = 0
@@ -405,7 +433,7 @@ func (g *Game) fireTorp(p *Player, dir float64) {
 	g.torps[g.torpSeq] = &Torp{
 		ID: g.torpSeq, Owner: p.ID, Team: p.Team, X: p.X, Y: p.Y, Dir: dir,
 		Speed: s.TorpSpeed, Fuse: s.TorpFuse + rand.Intn(20), Damage: s.TorpDamage,
-		Detter: -1,
+		Detter: -1, owner: p,
 	}
 }
 
@@ -439,7 +467,7 @@ func (g *Game) firePhaser(p *Player, dir float64) {
 	}
 	if hit != nil {
 		dmg := int(float64(s.PhaserDamage) * (1.0 - best/rangeMax))
-		g.hurt(hit, dmg, p.ID, "phaser")
+		g.hurt(hit, dmg, p, p.Team, "phaser")
 		g.phasers = append(g.phasers, PhaserFx{p.X, p.Y, hit.X, hit.Y, teamLetter(p.Team)})
 	} else {
 		g.phasers = append(g.phasers,
@@ -457,6 +485,7 @@ func (g *Game) detEnemyTorps(p *Player) {
 	for _, t := range g.torps {
 		if t.Team != p.Team && math.Hypot(t.X-p.X, t.Y-p.Y) <= DetDist {
 			t.Detter = p.ID
+			t.detter = p
 			g.explodeTorp(t)
 		}
 	}
@@ -511,6 +540,9 @@ func (g *Game) startBomb(p *Player) {
 		return
 	}
 	p.Bombing = !p.Bombing
+	if p.Bombing {
+		p.ShieldsUp = false
+	}
 	p.Beaming = 0
 	p.RepairMode = false
 }
@@ -523,6 +555,7 @@ func (g *Game) startBeam(p *Player, dir int) {
 		p.Beaming = 0
 	} else {
 		p.Beaming = dir
+		p.ShieldsUp = false
 	}
 	p.Bombing = false
 	p.RepairMode = false
@@ -530,7 +563,7 @@ func (g *Game) startBeam(p *Player, dir int) {
 
 // ---------- damage ----------
 
-func (g *Game) hurt(v *Player, dmg int, killer int, why string) {
+func (g *Game) hurt(v *Player, dmg int, killer *Player, killerTeam int, why string) {
 	if dmg <= 0 || v.Status != "alive" {
 		return
 	}
@@ -544,26 +577,25 @@ func (g *Game) hurt(v *Player, dmg int, killer int, why string) {
 		v.Damage += dmg
 	}
 	if v.Damage >= v.Ship.MaxDamage {
-		g.kill(v, killer, why)
+		g.kill(v, killer, killerTeam, why)
 	}
 }
 
-func (g *Game) kill(v *Player, killer int, why string) {
+func (g *Game) kill(v *Player, killer *Player, killerTeam int, why string) {
 	v.Status = "explode"
 	v.ExplodeTicks = 10
 	v.WhoDead = killer
+	v.WhoDeadTeam = killerTeam
+	v.WhoDeadDirect = why == "phaser" || why == "torp"
 	v.Speed, v.DesSpeed = 0, 0
 	v.Orbiting = -1
 	v.Bombing, v.RepairMode, v.Cloaked = false, false, false
 	v.Beaming = 0
-	if killer >= 0 && g.players[killer] != nil {
-		k := g.players[killer]
-		if k.Team != v.Team {
-			k.Kills += 1.0 + float64(v.Armies)*0.1 + v.Kills*0.1
-			g.say("%s (%s) was kill %.2f for %s (%s) [%s]",
-				v.Name, teamLetter(v.Team), k.Kills, k.Name, teamLetter(k.Team), why)
-			return
-		}
+	if killer != nil && killerTeam != TeamNone && killerTeam != v.Team {
+		killer.Kills += 1.0 + float64(v.Armies)*0.1 + v.Kills*0.1
+		g.say("%s (%s) was kill %.2f for %s (%s) [%s]",
+			v.Name, teamLetter(v.Team), killer.Kills, killer.Name, teamLetter(killerTeam), why)
+		return
 	}
 	g.say("%s (%s) was destroyed [%s]", v.Name, teamLetter(v.Team), why)
 }
@@ -863,6 +895,7 @@ func (g *Game) moveTorps() {
 		}
 		if t.X < 0 || t.X > GWidth || t.Y < 0 || t.Y > GWidth {
 			t.Detter = t.Owner // wall hits are TDET at the owner: team-safe
+			t.detter = t.owner
 			g.explodeTorp(t)
 			continue
 		}
@@ -880,8 +913,8 @@ func (g *Game) moveTorps() {
 
 func (g *Game) freeTorp(t *Torp) {
 	delete(g.torps, t.ID)
-	if o := g.players[t.Owner]; o != nil {
-		o.NTorps--
+	if t.owner != nil && t.owner.NTorps > 0 {
+		t.owner.NTorps--
 	}
 }
 
@@ -889,11 +922,10 @@ func (g *Game) explodeTorp(t *Torp) {
 	g.freeTorp(t)
 	g.booms = append(g.booms, Boom{t.X, t.Y, 0.35})
 	for _, p := range g.players {
-		if p == nil || p.Status != "alive" || p.ID == t.Owner {
+		if p == nil || p.Status != "alive" || p == t.owner {
 			continue
 		}
-		if t.Detter >= 0 && p.ID != t.Detter && g.players[t.Detter] != nil &&
-			p.Team == g.players[t.Detter].Team {
+		if t.detter != nil && p != t.detter && p.Team == t.detter.Team {
 			continue // TDETTEAMSAFE — but the detter himself eats the blast
 		}
 		dist := math.Hypot(p.X-t.X, p.Y-t.Y)
@@ -904,11 +936,11 @@ func (g *Game) explodeTorp(t *Torp) {
 		if dist > ExpDist {
 			dmg = int(float64(t.Damage) * (DamDist - dist) / (DamDist - ExpDist))
 		}
-		credit := t.Owner
-		if t.Detter >= 0 && p.ID != t.Detter {
-			credit = t.Detter // detted torp kills credit the detter...
+		credit, creditTeam := t.owner, t.Team
+		if t.detter != nil && p != t.detter {
+			credit, creditTeam = t.detter, t.detter.Team // detted torp kills credit the detter...
 		} // ...except when it kills the detter: that one is the owner's
-		g.hurt(p, dmg, credit, "torp")
+		g.hurt(p, dmg, credit, creditTeam, "torp")
 	}
 }
 
@@ -918,7 +950,8 @@ func (g *Game) checkSelfDestruct(p *Player) {
 	if p.SelfDest == 0 {
 		return
 	}
-	green := p.Damage == 0 && p.Shield == p.Ship.MaxShield
+	green := p.Damage == 0 && p.Shield == p.Ship.MaxShield &&
+		(p.Bot == nil || !g.botsScuttling)
 	if green {
 		for _, e := range g.players {
 			if e != nil && e.Status == "alive" && e.Team != p.Team &&
@@ -931,7 +964,7 @@ func (g *Game) checkSelfDestruct(p *Player) {
 	if g.tick >= p.SelfDest || green {
 		p.SelfDest = 0
 		p.SelfKill = true
-		g.kill(p, -1, "self destruct")
+		g.kill(p, nil, TeamNone, "self destruct")
 	}
 }
 
@@ -961,8 +994,16 @@ func (g *Game) blowup(v *Player) {
 		if dist > ExpDist {
 			dmg = int(float64(base) * (ShipDamAge - dist) / (ShipDamAge - ExpDist))
 		}
-		// chain credit: whoever destroyed the exploding ship gets its splash kills
-		g.hurt(p, dmg, v.WhoDead, "explosion")
+		// Vanilla only propagates an original direct-weapon killer when the
+		// splash victim is neither that killer nor one of that killer's teammates.
+		// Otherwise the exploding ship owns the blast, including environmental,
+		// self-destruct, genocide, and already-chained deaths.
+		credit, creditTeam := v, v.Team
+		if v.WhoDeadDirect && v.WhoDead != nil && v.WhoDead.Team == v.WhoDeadTeam &&
+			p != v.WhoDead && p.Team != v.WhoDeadTeam {
+			credit, creditTeam = v.WhoDead, v.WhoDeadTeam
+		}
+		g.hurt(p, dmg, credit, creditTeam, "explosion")
 	}
 }
 
@@ -979,7 +1020,7 @@ func (g *Game) planetFight() {
 				continue
 			}
 			if math.Hypot(p.X-pl.X, p.Y-pl.Y) <= PFireDist {
-				g.hurt(p, pl.Armies/10+2, -1, "planet fire from "+pl.Name)
+				g.hurt(p, pl.Armies/10+2, nil, TeamNone, "planet fire from "+pl.Name)
 			}
 		}
 	}
@@ -1196,7 +1237,7 @@ func (g *Game) checkGenocide(loser int, winner *Player) bool {
 		teamNames[loser], teamNames[winner.Team], winner.Name)
 	for _, p := range g.players {
 		if p != nil && p.Team == loser && p.Status == "alive" {
-			g.kill(p, -1, "genocide")
+			g.kill(p, nil, TeamNone, "genocide")
 		}
 	}
 	g.endRound()
